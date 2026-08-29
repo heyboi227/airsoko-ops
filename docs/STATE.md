@@ -10,19 +10,19 @@ Where the build currently stands. Updated at the end of every phase.
 
 The foundations, and one entity through every layer to prove them.
 
-| Area                                                      | Status                        |
-| --------------------------------------------------------- | ----------------------------- |
-| Monorepo, workspaces, TypeScript strict everywhere        | Done                          |
-| PostgreSQL 18 + Drizzle, migration `0000_many_preak.sql`  | Done                          |
-| Domain kernel: geo, time, policy, intent pipeline         | Done, 46 unit tests           |
-| Mutation pipeline with audit and alerts, transactional    | Done                          |
-| RBAC: 6 roles, 36 permissions, enforced API-side          | Done                          |
-| Airports end to end: list, filter, create, edit, withdraw | Done                          |
-| Audit read endpoint (`GET /api/audit`)                    | Done, minimal                 |
-| App shell, navigation, login, theme                       | Done, minimal                 |
-| Deterministic seed: 32 countries, 37 airports, 7 users    | Done                          |
-| CI: types, lint, format, unit, build, acceptance          | Done                          |
-| Acceptance scenarios A–G committed                        | G partly passing, A–F `fixme` |
+| Area                                                      | Status                         |
+| --------------------------------------------------------- | ------------------------------ |
+| Monorepo, workspaces, TypeScript strict everywhere        | Done                           |
+| PostgreSQL 18 + Drizzle, migration `0000_many_preak.sql`  | Done                           |
+| Domain kernel: geo, time, policy, intent pipeline         | Done, 46 unit tests            |
+| Mutation pipeline with audit and alerts, transactional    | Done                           |
+| RBAC: 6 roles, 36 permissions, enforced API-side          | Done                           |
+| Airports end to end: list, filter, create, edit, withdraw | Done                           |
+| Audit read endpoint (`GET /api/audit`)                    | Done, minimal                  |
+| App shell, navigation, login, theme                       | Done, minimal                  |
+| Deterministic seed: 32 countries, 36 airports, 7 users    | Done, byte-identical on reseed |
+| CI: types, lint, format, unit, build, acceptance          | Done                           |
+| Acceptance scenarios A–G committed                        | 15 passing, 15 `fixme`         |
 
 ### Verified
 
@@ -32,12 +32,20 @@ The foundations, and one entity through every layer to prove them.
   `exactOptionalPropertyTypes`.
 - Production build produces `apps/api/dist/main.js` and `apps/web/dist`.
 
+- Migration applies to a clean Postgres 18 and the seed loads 32 countries, 36
+  airports and 7 users. Reseeding three times produced an identical MD5 across
+  airports, users and countries — ids, password hashes and timestamps included.
+- The full acceptance suite runs green against the live database: **15 passed, 15
+  skipped** (the `fixme` scenarios), 0 failed. That covers preview-without-writing,
+  a blocking conflict naming the real colliding record, warning acknowledgement by
+  code, the audit entry carrying before/after and reason, and the Scenario G
+  permission boundary asserted at the API with no browser involved.
+- `npm run verify` exits 0: typecheck, lint, format, 46 unit tests, both builds.
+
 ### Not yet verified
 
-- **Nothing has run against a live database.** Migration and seed are written and the
-  migration is generated, but the Postgres image could not be pulled on this machine —
-  see the known issue in the README. Until then the acceptance specs and the seed are
-  unexercised.
+- Nothing outside Airports has been exercised, because nothing outside Airports
+  exists yet.
 
 ---
 
@@ -67,9 +75,8 @@ update cost; the spike is then deleted.
    style; a marker rotates to heading; the telemetry provider interface compiles
    against a stub; measure the cost of moving ~40 markers per tick.
 
-**Before starting:** pull the Postgres image from a non-elevated terminal, then run
-`npm run db:up && npm run db:migrate && npm run db:seed && npm run test:e2e` to close
-out the Phase 0 gate properly.
+**Gate 0 is closed.** The database runs, the seed is deterministic, and the
+acceptance suite is green.
 
 ---
 

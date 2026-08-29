@@ -34,20 +34,28 @@ test.describe("Airports", () => {
     await signInAs(page, ACCOUNTS.commercialManager);
 
     await page.getByRole("button", { name: "Add airport" }).click();
-    await page.getByLabel("IATA code").fill("BEG");
-    await page.getByLabel("ICAO code").fill("LYXX");
-    await page.getByLabel("Airport name").fill("Duplicate Belgrade");
-    await page.getByLabel("City").fill("Belgrade");
-    await page.getByLabel("Country").fill("Serbia");
-    await page.getByRole("option", { name: /Serbia/ }).click();
-    await page.getByLabel("Latitude").fill("45.0");
-    await page.getByLabel("Longitude").fill("21.0");
-    await page.getByRole("button", { name: "Review and add" }).click();
 
-    // The dialog reports the kernel's blocking finding, and the confirm button
-    // is unavailable -- the refusal is visible before any write is attempted.
-    await expect(page.getByText("Cannot be applied")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Apply" })).toBeDisabled();
+    // Scope to the dialog: the page behind it has its own Country filter, and
+    // several field labels would otherwise resolve to two controls.
+    const form = page.getByRole("dialog");
+    await form.getByRole("textbox", { name: "IATA code" }).fill("BEG");
+    await form.getByRole("textbox", { name: "ICAO code" }).fill("LYXX");
+    await form.getByRole("textbox", { name: "Airport name" }).fill("Duplicate Belgrade");
+    await form.getByRole("textbox", { name: "City" }).fill("Belgrade");
+    await form.getByRole("combobox", { name: "Country" }).fill("Serbia");
+    await page.getByRole("option", { name: /Serbia/ }).click();
+    await form.getByRole("textbox", { name: "Latitude" }).fill("45.0");
+    await form.getByRole("textbox", { name: "Longitude" }).fill("21.0");
+    await form.getByRole("button", { name: "Review and add" }).click();
+
+    // A preview returns 200 carrying the finding rather than an error, so the
+    // operator reads the conflict itself instead of a generic refusal banner.
+    const confirm = page.getByRole("dialog");
+    await expect(confirm.getByText("1 blocking conflict")).toBeVisible();
+    // Named precisely: the actual colliding record, not "duplicate code".
+    await expect(confirm.getByText(/IATA code BEG is already in use/)).toBeVisible();
+    await expect(confirm.getByText(/Nikola Tesla/)).toBeVisible();
+    await expect(confirm.getByRole("button", { name: "Apply" })).toBeDisabled();
   });
 
   test("a Booking Administrator is not offered actions the API would refuse", async ({

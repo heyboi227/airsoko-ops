@@ -15,7 +15,12 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - airsoko-pgdata:/var/lib/postgresql/data
+      # Postgres 18 changed this: the mount goes at /var/lib/postgresql, and the
+      # image places the cluster in a major-version subdirectory beneath it
+      # (/var/lib/postgresql/18/docker) so pg_upgrade --link can work across a
+      # version bump without crossing a mount boundary. Mounting the old
+      # /var/lib/postgresql/data path makes 18+ refuse to start.
+      - airsoko-pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airsoko -d airsoko_ops"]
       interval: 3s

@@ -47,18 +47,14 @@ export const flightNumberSchema = z
   .regex(/^[A-Z0-9]{2}\d{1,4}$/, { message: "Expected a flight number such as SK412" });
 
 /** Aircraft registration, e.g. "YU-ASA". */
-export const registrationSchema = z
-  .string()
-  .regex(/^[A-Z0-9]{1,2}-[A-Z0-9]{3,5}$/, {
-    message: "Expected a registration such as YU-ASA",
-  });
+export const registrationSchema = z.string().regex(/^[A-Z0-9]{1,2}-[A-Z0-9]{3,5}$/, {
+  message: "Expected a registration such as YU-ASA",
+});
 
 /** Booking reference: six characters, ambiguous glyphs excluded. */
-export const pnrSchema = z
-  .string()
-  .regex(/^[A-HJ-NP-Z2-9]{6}$/, {
-    message: "A PNR is six characters, excluding I, O, 0 and 1",
-  });
+export const pnrSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, {
+  message: "A PNR is six characters, excluding I, O, 0 and 1",
+});
 
 export const latitudeSchema = z.number().min(-90).max(90);
 export const longitudeSchema = z.number().min(-180).max(180);

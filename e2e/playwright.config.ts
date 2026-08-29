@@ -51,14 +51,14 @@ export default defineConfig({
 
   webServer: [
     {
-      command: "npm run dev:api --workspace-root",
+      command: "npm run dev:api",
       url: `${API_URL}/health/ready`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       cwd: "..",
     },
     {
-      command: "npm run dev:web --workspace-root",
+      command: "npm run dev:web",
       url: WEB_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
