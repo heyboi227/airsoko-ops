@@ -1,0 +1,47 @@
+{
+  "name": "airsoko-ops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Air Soko operations administration console",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "e2e"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @airsoko/api",
+    "dev:web": "npm run dev --workspace @airsoko/web",
+    "build": "npm run build --workspace @airsoko/api && npm run build --workspace @airsoko/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:generate": "npm run db:generate --workspace @airsoko/api",
+    "db:migrate": "npm run db:migrate --workspace @airsoko/api",
+    "db:seed": "npm run db:seed --workspace @airsoko/api",
+    "db:reset": "docker compose down -v && npm run db:up && npm run db:migrate && npm run db:seed",
+    "verify": "npm run typecheck && npm run lint && npm run format && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.5",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.0",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}

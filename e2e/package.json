@@ -1,0 +1,16 @@
+{
+  "name": "@airsoko/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The seven acceptance scenarios from the brief, as executable specifications.",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit --project ."
+  },
+  "devDependencies": {
+    "@airsoko/contracts": "*",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.4.0"
+  }
+}

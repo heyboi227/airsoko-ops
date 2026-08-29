@@ -1,0 +1,50 @@
+version: 2
+
+# Dependabot stays -- keeping dependencies current is a good habit and the one
+# the reference project got right. What it got wrong was merging the results
+# without ever compiling them: 1,679 auto-merged pull requests against an
+# application whose source had not changed in two years, gated on a check suite
+# whose only member was CodeQL.
+#
+# So: updates are grouped to cut the noise, majors are never automatic, and
+# .github/workflows/automerge.yml requires the full CI matrix to pass before
+# anything lands. A dependency that breaks the build now blocks its own merge.
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    groups:
+      types:
+        patterns: ["@types/*"]
+        update-types: ["minor", "patch"]
+      linting:
+        patterns: ["eslint*", "@eslint/*", "typescript-eslint", "prettier"]
+        update-types: ["minor", "patch"]
+      mui:
+        patterns: ["@mui/*", "@emotion/*"]
+        update-types: ["minor", "patch"]
+      react:
+        patterns: ["react", "react-dom", "react-router-dom"]
+        update-types: ["minor", "patch"]
+      backend:
+        patterns: ["express", "drizzle*", "pg", "zod", "pino*"]
+        update-types: ["minor", "patch"]
+      tooling:
+        patterns: ["vite", "vitest", "@vitejs/*", "tsx", "esbuild", "@playwright/*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Majors are read by a person. This is the rule whose absence produced a
+      # repository pinned to React 19 and TypeScript 7 while still building
+      # through react-scripts 5.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

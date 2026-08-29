@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: airsoko-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airsoko
+      POSTGRES_PASSWORD: airsoko
+      POSTGRES_DB: airsoko_ops
+      # Deterministic seeds and reproducible screenshots depend on the server
+      # not drifting with the host's locale or zone. Everything is stored as
+      # timestamptz; UTC here only fixes how the server itself narrates time.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - airsoko-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airsoko -d airsoko_ops"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  airsoko-pgdata:

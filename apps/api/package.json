@@ -1,0 +1,42 @@
+{
+  "name": "@airsoko/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Operations API: transactional intent pipeline over PostgreSQL.",
+  "main": "./src/main.ts",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "node scripts/build.js",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit --project .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed/run.ts"
+  },
+  "dependencies": {
+    "@airsoko/contracts": "*",
+    "@airsoko/domain": "*",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "zod": "^4.5.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.4.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.0",
+    "pino-pretty": "^13.1.2",
+    "tsx": "^4.23.12"
+  }
+}
