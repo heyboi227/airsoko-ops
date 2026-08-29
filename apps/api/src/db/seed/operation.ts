@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, eq, gte, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "../client.ts";
 import {
   aircraft,
@@ -342,6 +342,34 @@ export async function seedNetwork(
     createdAt: SEED_EPOCH,
     updatedAt: SEED_EPOCH,
   }));
+
+  // Remove flights this seed used to generate and no longer does.
+  //
+  // Upserting alone leaves orphans: change a flight number or a frequency and
+  // the old rows stay behind for ever, still carrying whatever status they had
+  // when they were last written. That is how "airborne with no aircraft"
+  // appeared -- a state no operation can be in, quietly poisoning any metric
+  // built on top of it.
+  //
+  // Only rows this seed created are touched. `created_at` is the marker: seeded
+  // rows carry the fixed epoch, anything an operator made through the
+  // application does not.
+  const generatedIds = flightRows.map((row) => row.id);
+  const windowStart = generatedFlights[0]?.serviceDate;
+  const windowEnd = generatedFlights.at(-1)?.serviceDate;
+
+  if (windowStart && windowEnd && generatedIds.length > 0) {
+    await db
+      .delete(flightInstances)
+      .where(
+        and(
+          eq(flightInstances.createdAt, SEED_EPOCH),
+          gte(flightInstances.serviceDate, windowStart),
+          lte(flightInstances.serviceDate, windowEnd),
+          notInArray(flightInstances.id, generatedIds),
+        ),
+      );
+  }
 
   for (const batch of chunk(flightRows, 300)) {
     await db

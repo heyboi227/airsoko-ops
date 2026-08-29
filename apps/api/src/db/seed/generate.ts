@@ -601,6 +601,16 @@ export function assignRotations(flights: GeneratedFlight[], now: string): Rotati
 
     const chosen = candidates[0];
     if (!chosen) {
+      // A flight with no airframe has not departed and is not in the air. The
+      // status computed from the schedule assumed one would be found, so it is
+      // wound back here -- otherwise the seed produces flights that are
+      // "airborne" with no aircraft, which is not a state an operation can be
+      // in and would have quietly poisoned every dashboard metric built on it.
+      flight.status = "scheduled";
+      flight.phase = "preflight";
+      flight.actualDeparture = null;
+      flight.actualArrival = null;
+      flight.baggageCarousel = null;
       unassigned.push(flight);
       continue;
     }
