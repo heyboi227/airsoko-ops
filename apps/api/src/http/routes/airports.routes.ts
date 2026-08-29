@@ -15,7 +15,7 @@ import {
   resourceRef,
 } from "@airsoko/domain";
 import { db, type Executor, type Transaction } from "../../db/client.ts";
-import { airports, countries } from "../../db/schema.ts";
+import { airports, countries } from "../../db/schema/index.ts";
 import { seededId } from "../../db/ids.ts";
 import { ISO_3166_1_ALPHA2 } from "../../db/seed/reference/iso3166.ts";
 import { actorOf, requireAuth, requirePermission } from "../auth.ts";

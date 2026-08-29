@@ -2,7 +2,7 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { loginSchema, permissionsFor, type CurrentUser } from "@airsoko/contracts";
 import { db } from "../../db/client.ts";
-import { userRoles, users } from "../../db/schema.ts";
+import { userRoles, users } from "../../db/schema/index.ts";
 import { verifyPassword } from "../password.ts";
 import { actorOf, requireAuth, signAccessToken } from "../auth.ts";
 import { ApiProblem } from "../errors.ts";

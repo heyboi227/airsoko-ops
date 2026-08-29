@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { closeDatabase, db } from "../client.ts";
-import { airports, countries, userRoles, users } from "../schema.ts";
+import { airports, countries, userRoles, users } from "../schema/index.ts";
 import { airportId, userId } from "../ids.ts";
 import { hashPasswordWithSalt } from "../../http/password.ts";
 import { env } from "../../env.ts";

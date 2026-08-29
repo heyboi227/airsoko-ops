@@ -3,7 +3,7 @@ import { and, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { paginationSchema, resourceKindSchema } from "@airsoko/contracts";
 import { db } from "../../db/client.ts";
-import { auditEntries } from "../../db/schema.ts";
+import { auditEntries } from "../../db/schema/index.ts";
 import { requireAuth, requirePermission } from "../auth.ts";
 
 /**

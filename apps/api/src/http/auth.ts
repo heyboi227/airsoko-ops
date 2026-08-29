@@ -10,7 +10,7 @@ import {
 } from "@airsoko/contracts";
 import { env } from "../env.ts";
 import { db } from "../db/client.ts";
-import { userRoles, users } from "../db/schema.ts";
+import { userRoles, users } from "../db/schema/index.ts";
 import { ApiProblem, forbidden, unauthenticated } from "./errors.ts";
 
 /**

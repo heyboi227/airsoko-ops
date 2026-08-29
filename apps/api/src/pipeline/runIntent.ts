@@ -8,7 +8,7 @@ import type {
   ResourceRef,
 } from "@airsoko/contracts";
 import { db, type Transaction } from "../db/client.ts";
-import { auditEntries, operationalAlerts } from "../db/schema.ts";
+import { auditEntries, operationalAlerts } from "../db/schema/index.ts";
 import { ApiProblem } from "../http/errors.ts";
 import type { Actor } from "../http/auth.ts";
 

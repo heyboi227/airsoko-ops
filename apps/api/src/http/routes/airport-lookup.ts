@@ -1,7 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { airportLookupQuerySchema, type AirportSuggestion } from "@airsoko/contracts";
 import { db } from "../../db/client.ts";
-import { airports } from "../../db/schema.ts";
+import { airports } from "../../db/schema/index.ts";
 import { airportReference, type ReferenceAirport } from "../../db/seed/reference/index.ts";
 import { ISO_3166_1_ALPHA2 } from "../../db/seed/reference/iso3166.ts";
 import type { Request, Response } from "express";
