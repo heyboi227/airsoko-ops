@@ -7,6 +7,7 @@ import { env } from "../../env.ts";
 import { logger } from "../../logger.ts";
 import { resolveCountries, resolveStations } from "./reference/index.ts";
 import { DEMO_PASSWORD, SEED_USERS, deterministicSalt } from "./users.ts";
+import { seedAircraftTypes, seedAirlines, seedFleet, seedNetwork } from "./operation.ts";
 
 /**
  * The seed is idempotent and deterministic.
@@ -24,6 +25,26 @@ import { DEMO_PASSWORD, SEED_USERS, deterministicSalt } from "./users.ts";
 
 /** A fixed instant so `created_at` does not drift between runs. */
 const SEED_EPOCH = "2026-01-01T00:00:00.000Z";
+
+/**
+ * Reference data is byte-identical on every run. Flights cannot be: an
+ * operations console with no flights today is useless, so the window has to
+ * follow the calendar. The guarantee is therefore *deterministic given a
+ * reference date* -- two runs on the same day are identical, a run tomorrow
+ * shifts the window by one day and produces the same shape.
+ *
+ * SEED_REFERENCE_DATE pins it when a test needs a fixed operating day.
+ */
+function referenceDate(): string {
+  const pinned = process.env.SEED_REFERENCE_DATE;
+  if (pinned) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(pinned)) {
+      throw new Error(`SEED_REFERENCE_DATE must be YYYY-MM-DD, got "${pinned}".`);
+    }
+    return pinned;
+  }
+  return new Date().toISOString().slice(0, 10);
+}
 
 async function seedCountries(codes: { code: string; name: string }[]): Promise<number> {
   await db
@@ -149,6 +170,41 @@ async function main(): Promise<void> {
 
   const userCount = await seedUsers();
   logger.info(`  users:     ${userCount}`);
+
+  logger.info("Seeding the operation...");
+
+  const airlineCount = await seedAirlines();
+  logger.info(`  airlines:  ${airlineCount}`);
+
+  const typeCount = await seedAircraftTypes();
+  const fleet = await seedFleet();
+  logger.info(
+    `  fleet:     ${fleet.tails} aircraft across ${typeCount} types, ` +
+      `${fleet.cabins} cabins, ${fleet.seats} seats`,
+  );
+
+  const day = referenceDate();
+  const now = new Date().toISOString();
+  const network = await seedNetwork(stations, day, now);
+  logger.info(`  routes:    ${network.routes}`);
+  logger.info(`  schedules: ${network.schedules}`);
+  logger.info(
+    `  flights:   ${network.flights} across 9 days from ${day}, ` +
+      `${network.assigned} with an aircraft`,
+  );
+  logger.info(
+    `  ${network.rotationDelays} sectors pushed late by a late inbound (rotation delay)`,
+  );
+
+  if (network.unassigned.length > 0) {
+    // Not a seeding failure. A flight the rotation could not cover is a real
+    // operational state, and one the alert feed should be surfacing -- the
+    // count is reported rather than hidden.
+    logger.info(
+      `  ${network.unassigned.length} flights have no aircraft assigned ` +
+        `(no airframe of the right type free at the origin).`,
+    );
+  }
 
   logger.info(`Seed complete. Sign in with any address below and password "${DEMO_PASSWORD}":`);
   for (const user of SEED_USERS) {
