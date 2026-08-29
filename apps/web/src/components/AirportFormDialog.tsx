@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
+  Alert,
   Autocomplete,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -13,7 +16,8 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { Airport, Country, CreateAirport } from "@airsoko/contracts";
+import type { Airport, AirportSuggestion, Country, CreateAirport } from "@airsoko/contracts";
+import { apiRequest } from "../api/client.ts";
 
 /**
  * Create and edit an airport.
@@ -150,6 +154,65 @@ export function AirportFormDialog({
     airport ? toFormValues(airport) : EMPTY,
   );
   const [touched, setTouched] = useState(false);
+  /** Fields filled from the reference and not since edited by hand. */
+  const [sourced, setSourced] = useState<ReadonlySet<string>>(() => new Set());
+  const [lookupText, setLookupText] = useState("");
+
+  // Autofill is offered on create only. On an edit, someone may have corrected
+  // a coordinate deliberately, and a lookup must never quietly revert it.
+  const canAutofill = airport === null;
+
+  const lookup = useQuery({
+    queryKey: ["airport-lookup", lookupText],
+    queryFn: () =>
+      apiRequest<{ items: AirportSuggestion[] }>("/api/airports/lookup", {
+        query: { q: lookupText, limit: 8 },
+      }),
+    enabled: canAutofill && lookupText.trim().length >= 2,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const suggestions = useMemo(() => lookup.data?.items ?? [], [lookup.data]);
+
+  function applySuggestion(suggestion: AirportSuggestion) {
+    setValues({
+      iataCode: suggestion.iataCode,
+      icaoCode: suggestion.icaoCode,
+      name: suggestion.name,
+      city: suggestion.city,
+      countryCode: suggestion.countryCode,
+      latitude: String(suggestion.latitude),
+      longitude: String(suggestion.longitude),
+      elevationFt: String(suggestion.elevationFt),
+      timeZone: suggestion.timeZone,
+      isHub: false,
+      isFocusCity: false,
+    });
+    setSourced(
+      new Set([
+        "iataCode",
+        "icaoCode",
+        "name",
+        "city",
+        "countryCode",
+        "latitude",
+        "longitude",
+        "elevationFt",
+        "timeZone",
+      ]),
+    );
+  }
+
+  /** Any hand edit drops that field's reference marker -- it is theirs now. */
+  function setField(key: keyof AirportFormValues, value: string | boolean) {
+    setValues((current) => ({ ...current, [key]: value }));
+    setSourced((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  }
 
   const zones = TIME_ZONES;
   const errors = validate(values);
@@ -157,10 +220,12 @@ export function AirportFormDialog({
 
   const field = (key: keyof AirportFormValues) => ({
     value: values[key] as string,
-    onChange: (event: { target: { value: string } }) =>
-      setValues((current) => ({ ...current, [key]: event.target.value })),
+    onChange: (event: { target: { value: string } }) => setField(key, event.target.value),
     error: Boolean((touched && errors[key]) || serverIssues[key]),
-    helperText: (touched ? errors[key] : undefined) ?? serverIssues[key] ?? " ",
+    helperText:
+      (touched ? errors[key] : undefined) ??
+      serverIssues[key] ??
+      (sourced.has(key) ? "From reference" : " "),
   });
 
   return (
@@ -168,30 +233,73 @@ export function AirportFormDialog({
       <DialogTitle>{airport ? `Edit ${airport.iataCode}` : "Add an airport"}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={1}>
+          {canAutofill ? (
+            <Autocomplete
+              options={suggestions}
+              filterOptions={(options) => options}
+              loading={lookup.isFetching}
+              getOptionLabel={(option) => `${option.iataCode} ${option.name}`}
+              isOptionEqualToValue={(a, b) => a.iataCode === b.iataCode}
+              getOptionDisabled={(option) => option.alreadyOnFile}
+              onInputChange={(_event, text) => setLookupText(text)}
+              onChange={(_event, option) => {
+                if (option) applySuggestion(option);
+              }}
+              renderOption={(props, option) => {
+                const { key, ...rest } = props as typeof props & { key: string };
+                return (
+                  <Box component="li" key={key} {...rest}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
+                      <Typography variant="overline" sx={{ minWidth: 34 }}>
+                        {option.iataCode}
+                      </Typography>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography variant="body2" noWrap>
+                          {option.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {option.city}, {option.countryName} &middot; {option.timeZone}
+                        </Typography>
+                      </Box>
+                      {option.alreadyOnFile ? (
+                        <Chip label="On file" size="small" variant="outlined" />
+                      ) : null}
+                    </Box>
+                  </Box>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Find an airport"
+                  placeholder="IATA or ICAO code, city, or airport name"
+                  helperText="Fills the fields below from reference data. Every one stays editable."
+                />
+              )}
+            />
+          ) : null}
+
+          {sourced.size > 0 ? (
+            <Alert severity="info" variant="outlined">
+              Filled from reference data. Check it and change anything that is wrong &mdash;
+              what gets saved and audited is what you submit.
+            </Alert>
+          ) : null}
+
           <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
             <TextField
               label="IATA code"
               required
               slotProps={{ htmlInput: { maxLength: 3, style: { textTransform: "uppercase" } } }}
               {...field("iataCode")}
-              onChange={(event) =>
-                setValues((current) => ({
-                  ...current,
-                  iataCode: event.target.value.toUpperCase(),
-                }))
-              }
+              onChange={(event) => setField("iataCode", event.target.value.toUpperCase())}
             />
             <TextField
               label="ICAO code"
               required
               slotProps={{ htmlInput: { maxLength: 4, style: { textTransform: "uppercase" } } }}
               {...field("icaoCode")}
-              onChange={(event) =>
-                setValues((current) => ({
-                  ...current,
-                  icaoCode: event.target.value.toUpperCase(),
-                }))
-              }
+              onChange={(event) => setField("icaoCode", event.target.value.toUpperCase())}
             />
           </Box>
 
@@ -203,9 +311,7 @@ export function AirportFormDialog({
               options={[...countries]}
               getOptionLabel={(option) => `${option.name} (${option.code})`}
               value={countries.find((country) => country.code === values.countryCode) ?? null}
-              onChange={(_event, option) =>
-                setValues((current) => ({ ...current, countryCode: option?.code ?? "" }))
-              }
+              onChange={(_event, option) => setField("countryCode", option?.code ?? "")}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -232,9 +338,7 @@ export function AirportFormDialog({
           <Autocomplete
             options={zones}
             value={values.timeZone}
-            onChange={(_event, zone) =>
-              setValues((current) => ({ ...current, timeZone: zone ?? "" }))
-            }
+            onChange={(_event, zone) => setField("timeZone", zone ?? "")}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -250,9 +354,7 @@ export function AirportFormDialog({
               control={
                 <Switch
                   checked={values.isHub}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, isHub: event.target.checked }))
-                  }
+                  onChange={(event) => setField("isHub", event.target.checked)}
                 />
               }
               label="Airline hub"
@@ -261,9 +363,7 @@ export function AirportFormDialog({
               control={
                 <Switch
                   checked={values.isFocusCity}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, isFocusCity: event.target.checked }))
-                  }
+                  onChange={(event) => setField("isFocusCity", event.target.checked)}
                 />
               }
               label="Focus city"

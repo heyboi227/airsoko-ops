@@ -11,3 +11,7 @@ playwright-report/
 test-results/
 .DS_Store
 Thumbs.db
+
+# Downloaded source data for the reference importer. The 358 KB curated JSON it
+# produces is committed; the 12.7 MB CSV it derives that from is not.
+.cache/

@@ -21,8 +21,6 @@ export const countrySchema = z.object({
   /** ISO 3166-1 alpha-2. */
   code: z.string().regex(/^[A-Z]{2}$/),
   name: z.string().min(1),
-  /** ISO 3166-1 alpha-3, kept for display in document contexts. */
-  alpha3: z.string().regex(/^[A-Z]{3}$/),
 });
 export type Country = z.infer<typeof countrySchema>;
 
@@ -85,3 +83,34 @@ export const airportQuerySchema = paginationSchema.extend({
   direction: z.enum(["asc", "desc"]).default("asc"),
 });
 export type AirportQuery = z.infer<typeof airportQuerySchema>;
+
+/**
+ * A suggestion from the curated airport reference, offered while an operator
+ * types an IATA code or a city name.
+ *
+ * Deliberately not an `Airport`: it has no id and it is not a record. It is a
+ * proposal the operator can accept, edit, or ignore, and what gets audited is
+ * what they saved -- never what the reference said.
+ */
+export const airportSuggestionSchema = z.object({
+  iataCode: iataAirportCodeSchema,
+  icaoCode: icaoAirportCodeSchema,
+  name: z.string(),
+  city: z.string(),
+  countryCode: countrySchema.shape.code,
+  countryName: z.string(),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+  elevationFt: z.number().int(),
+  timeZone: ianaTimeZoneSchema,
+  /** True when this station is already on file, so the form can say so. */
+  alreadyOnFile: z.boolean(),
+});
+export type AirportSuggestion = z.infer<typeof airportSuggestionSchema>;
+
+export const airportLookupQuerySchema = z.object({
+  /** IATA code, ICAO code, airport name or city. */
+  q: z.string().trim().min(2).max(80),
+  limit: z.coerce.number().int().min(1).max(25).default(8),
+});
+export type AirportLookupQuery = z.infer<typeof airportLookupQuerySchema>;

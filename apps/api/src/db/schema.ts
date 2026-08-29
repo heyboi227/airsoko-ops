@@ -38,10 +38,18 @@ export const resourceKindEnum = pgEnum("resource_kind", RESOURCE_KINDS);
 
 // --- Reference data --------------------------------------------------------
 
+/**
+ * Only the countries the network touches. A row is added when a station needs
+ * one, rather than loading a world list -- an airline's reference data covers
+ * where it flies. See docs/DECISIONS.md.
+ *
+ * There is no alpha-3 column yet: nothing reads one, and shipping 249 codes
+ * that could not be verified from a source would be worse than not having
+ * them. It returns in Phase 6 if travel documents need it.
+ */
 export const countries = pgTable("countries", {
   /** ISO 3166-1 alpha-2, the natural key. */
   code: varchar("code", { length: 2 }).primaryKey(),
-  alpha3: varchar("alpha3", { length: 3 }).notNull(),
   name: text("name").notNull(),
 });
 

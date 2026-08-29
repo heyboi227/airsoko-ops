@@ -8,13 +8,20 @@ import {
   type Airport,
   type PageEnvelope,
 } from "@airsoko/contracts";
-import { evaluateDeactivateAirport, evaluateSaveAirport, resourceRef } from "@airsoko/domain";
-import { db, type Executor } from "../../db/client.ts";
+import {
+  consequence,
+  evaluateDeactivateAirport,
+  evaluateSaveAirport,
+  resourceRef,
+} from "@airsoko/domain";
+import { db, type Executor, type Transaction } from "../../db/client.ts";
 import { airports, countries } from "../../db/schema.ts";
 import { seededId } from "../../db/ids.ts";
+import { ISO_3166_1_ALPHA2 } from "../../db/seed/reference/iso3166.ts";
 import { actorOf, requireAuth, requirePermission } from "../auth.ts";
 import { ApiProblem, notFound, pathParam } from "../errors.ts";
 import { runIntent } from "../../pipeline/runIntent.ts";
+import { lookupAirports } from "./airport-lookup.ts";
 
 /**
  * Airports: the first entity wired end to end.
@@ -72,21 +79,50 @@ async function loadExisting(executor: Executor) {
     .from(airports);
 }
 
-async function assertCountryExists(executor: Executor, code: string): Promise<void> {
+const ISO_COUNTRY_NAMES = new Map(ISO_3166_1_ALPHA2.map((c) => [c.code, c.name]));
+
+/**
+ * The country gate.
+ *
+ * A code must be one ISO 3166-1 actually assigns. That is the same rule the
+ * airport reference importer applies, held here too so an operator cannot
+ * enter by hand what the importer would reject.
+ */
+function isoCountryName(code: string): string {
+  const name = ISO_COUNTRY_NAMES.get(code);
+  if (!name) {
+    throw new ApiProblem("VALIDATION_FAILED", `${code} is not an ISO 3166-1 country code.`, {
+      issues: [
+        {
+          path: "countryCode",
+          message: `${code} is not a country code assigned by ISO 3166-1.`,
+        },
+      ],
+    });
+  }
+  return name;
+}
+
+async function countryIsOnFile(executor: Executor, code: string): Promise<boolean> {
   const [row] = await executor
     .select({ code: countries.code })
     .from(countries)
     .where(eq(countries.code, code))
     .limit(1);
-  if (!row) {
-    throw new ApiProblem(
-      "VALIDATION_FAILED",
-      `Country code ${code} is not in the reference data.`,
-      {
-        issues: [{ path: "countryCode", message: `Unknown country code ${code}.` }],
-      },
-    );
-  }
+  return row !== undefined;
+}
+
+/**
+ * The countries table holds the countries the network touches, not a world
+ * list. Serving a new one is exactly the deliberate act that adds it, so the
+ * row is created alongside the station inside the same transaction -- and the
+ * operator sees it coming as a consequence on the preview.
+ */
+async function ensureCountryOnFile(tx: Transaction, code: string): Promise<void> {
+  await tx
+    .insert(countries)
+    .values({ code, name: isoCountryName(code) })
+    .onConflictDoNothing();
 }
 
 // --- Read ------------------------------------------------------------------
@@ -135,6 +171,12 @@ airportsRouter.get("/", requireAuth, requirePermission("airport:read"), async (r
   res.json(envelope);
 });
 
+/**
+ * Autofill suggestions from the curated reference. Registered before "/:id",
+ * or Express would read "lookup" as an airport id.
+ */
+airportsRouter.get("/lookup", requireAuth, requirePermission("airport:read"), lookupAirports);
+
 /** Distinct countries that have at least one active station -- for filter menus. */
 airportsRouter.get(
   "/meta/countries",
@@ -142,7 +184,7 @@ airportsRouter.get(
   requirePermission("airport:read"),
   async (_req, res) => {
     const rows = await db
-      .selectDistinct({ code: countries.code, alpha3: countries.alpha3, name: countries.name })
+      .selectDistinct({ code: countries.code, name: countries.name })
       .from(airports)
       .innerJoin(countries, eq(countries.code, airports.countryCode))
       .where(eq(airports.active, true))
@@ -168,7 +210,8 @@ airportsRouter.post("/", requireAuth, requirePermission("airport:write"), async 
   const actor = actorOf(req);
   const now = new Date().toISOString();
 
-  await assertCountryExists(db, input.countryCode);
+  const countryName = isoCountryName(input.countryCode);
+  const countryIsNew = !(await countryIsOnFile(db, input.countryCode));
 
   const id = seededId("airport", input.iataCode);
 
@@ -177,8 +220,17 @@ airportsRouter.post("/", requireAuth, requirePermission("airport:write"), async 
     actor,
     options,
     now,
-    evaluate: async (tx) => evaluateSaveAirport(input, { existing: await loadExisting(tx) }),
+    evaluate: async (tx) => {
+      const evaluation = evaluateSaveAirport(input, { existing: await loadExisting(tx) });
+      if (countryIsNew) {
+        evaluation.consequences.push(
+          consequence("map_visibility_changed", `${countryName} joins the country reference`),
+        );
+      }
+      return evaluation;
+    },
     apply: async (tx) => {
+      await ensureCountryOnFile(tx, input.countryCode);
       await tx.insert(airports).values({
         id,
         iataCode: input.iataCode,
@@ -234,7 +286,7 @@ airportsRouter.patch(
     const current = await findAirport(db, id);
     if (!current) throw notFound(`Airport ${id}`);
 
-    if (patch.countryCode) await assertCountryExists(db, patch.countryCode);
+    if (patch.countryCode) isoCountryName(patch.countryCode);
 
     // Only the keys actually present in the patch. Spreading the parsed object
     // directly would let an omitted field arrive as `undefined` and blank a
@@ -252,6 +304,7 @@ airportsRouter.patch(
       evaluate: async (tx) =>
         evaluateSaveAirport(merged, { existing: await loadExisting(tx), editingId: id }),
       apply: async (tx) => {
+        if (patch.countryCode) await ensureCountryOnFile(tx, patch.countryCode);
         await tx
           .update(airports)
           .set({ ...supplied, updatedAt: now })

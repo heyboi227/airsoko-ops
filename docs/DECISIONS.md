@@ -164,3 +164,67 @@ out of sync with its own dependency tree.
 **Decided.** `maplibre-gl` and the MUI X packages are not installed yet. They arrive
 with the phase that uses them — the map in Phase 1's spike, the charts with the
 dashboard. A foundation repository with unused dependencies teaches the wrong habit.
+
+---
+
+## 13. Airport facts are sourced, not authored
+
+**Decided.** Station names, ICAO codes, coordinates, elevations and time zones come
+from a curated extract of [OurAirports](https://ourairports.com/) (public domain),
+committed as `apps/api/src/db/seed/reference/airports.reference.json`. Rebuild it with
+`npx tsx scripts/build-airport-reference.ts`.
+
+The first version of the seed carried coordinates written from memory. Checked against
+the source they were a median 261 m out, and Madrid was wrong by 2.5 km — which would
+have propagated into every route distance, range check and map position downstream.
+
+**Not fetched at runtime.** An airport's coordinates are stable for decades, so calling
+a remote API per keystroke would buy a network dependency, a key and a rate limit in
+exchange for nothing. A committed file is instant, works offline, and makes the tests
+deterministic. If a live source is ever wanted it replaces `airportReference()` behind
+the same shape — the same pattern the telemetry provider uses.
+
+**Time zones are derived, then validated.** OurAirports has no zone column, so
+`tz-lookup` (148 KB, offline) derives one from the coordinates. It agreed with all 36
+hand-authored zones across UTC+14 to UTC−5, including a half-hour offset and the
+southern hemisphere, which is why the 71 MB `geo-tz` alternative was not needed.
+
+**Selection is curated, not exhaustive:** everywhere in Europe with scheduled service,
+plus major airports worldwide — 1,396 stations out of 85,986. An airline's station
+reference covers where it flies and where it might plausibly fly.
+
+---
+
+## 14. Country codes must be ones ISO actually assigns
+
+**Decided.** Both the importer and the API reject any country code outside the 249
+officially assigned by ISO 3166-1 alpha-2, generated into `iso3166.ts` with the count
+asserted so an ICU update cannot silently move the gate.
+
+The reason is a plain data-modelling one: the source's `iso_country` column is **not**
+ISO 3166-1. It carries user-assigned codes from the `XA`–`XZ` range that ISO
+deliberately leaves unstandardised, plus `ZZ` for unknown. Our schema documents that
+column as ISO 3166-1, so admitting those values would make the schema's own contract
+false. One general rule, applied uniformly, with everything it drops reported in the
+run output for a person to see.
+
+**The countries table is not a world list.** It holds the countries the network
+touches. Serving a new one is exactly the deliberate act that adds it, so the row is
+created alongside the station inside the same transaction — and the operator is told it
+is coming, as a consequence on the preview.
+
+An earlier version of this document claimed the import "forces the country table to
+become complete". That was wrong, and it was the claim that manufactured the problem.
+Reaching for a bulk world import is a lazy default, not a requirement.
+
+---
+
+## 15. No alpha-3 country column, for now
+
+**Decided.** The `countries` table has `code` and `name` and nothing else. Migration
+`0001` drops the `alpha3` column added in Phase 0.
+
+Nothing reads it, and the 249 alpha-3 codes could not be derived from any source
+available here — `Intl` does not expose them. Shipping 249 codes typed from memory
+would have been unverifiable data in a column documented as authoritative. It returns
+in Phase 6 if travel documents need it, sourced properly then.

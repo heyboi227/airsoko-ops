@@ -118,7 +118,8 @@ export default tseslint.config(
   },
 
   {
-    files: ["apps/api/**/*.ts", "e2e/**/*.ts", "*.config.{ts,js}", "**/*.config.{ts,js}"],
+    // Includes the build scripts under apps/api/scripts, which are plain .js
+    files: ["apps/api/**/*.{ts,js}", "e2e/**/*.ts", "*.config.{ts,js}", "**/*.config.{ts,js}"],
     languageOptions: {
       globals: globals.node,
     },
