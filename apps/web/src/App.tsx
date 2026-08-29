@@ -6,6 +6,7 @@ import { useAuth } from "./auth/AuthContext.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { AirportsPage } from "./pages/AirportsPage.tsx";
+import { DashboardPage } from "./pages/DashboardPage.tsx";
 import { PhasePlaceholder } from "./pages/PhasePlaceholder.tsx";
 import { NAV_ITEMS } from "./shell/navigation.ts";
 
@@ -52,12 +53,15 @@ export function App() {
       ) : (
         <Routes>
           <Route element={<AppShell mode={mode} onToggleMode={toggleMode} />}>
-            <Route index element={<Navigate to="/network" replace />} />
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/network" element={<AirportsPage />} />
-            {NAV_ITEMS.filter((item) => item.path !== "/network").map((item) => (
+            {NAV_ITEMS.filter(
+              (item) => item.path !== "/network" && item.path !== "/dashboard",
+            ).map((item) => (
               <Route key={item.path} path={item.path} element={<PhasePlaceholder />} />
             ))}
-            <Route path="*" element={<Navigate to="/network" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>
       )}

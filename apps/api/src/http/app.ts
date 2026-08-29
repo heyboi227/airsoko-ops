@@ -8,8 +8,10 @@ import { logger } from "../logger.ts";
 import { errorHandler } from "./errors.ts";
 import { authRouter } from "./routes/auth.routes.ts";
 import { airportsRouter } from "./routes/airports.routes.ts";
+import { analyticsRouter } from "./routes/analytics.routes.ts";
 import { auditRouter } from "./routes/audit.routes.ts";
 import { healthRouter } from "./routes/health.routes.ts";
+import { liveRouter } from "./routes/live.routes.ts";
 
 export function createApp(): Express {
   const app = express();
@@ -45,7 +47,9 @@ export function createApp(): Express {
   app.use("/health", healthRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/airports", airportsRouter);
+  app.use("/api/analytics", analyticsRouter);
   app.use("/api/audit", auditRouter);
+  app.use("/api/live-operations", liveRouter);
 
   app.use((req, res) => {
     res.status(404).json({

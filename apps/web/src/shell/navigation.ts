@@ -25,9 +25,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: "/dashboard",
     label: "Dashboard",
     permission: "analytics:read",
-    arrivesInPhase: 1,
-    summary:
-      "Today's operation at a glance: flights by status, delays and on-time performance, passenger and load figures, fleet and crew availability, and the actionable alert feed.",
+    arrivesInPhase: null,
+    summary: "",
   },
   {
     path: "/live",

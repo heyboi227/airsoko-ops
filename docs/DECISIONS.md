@@ -228,3 +228,58 @@ Nothing reads it, and the 249 alpha-3 codes could not be derived from any source
 available here — `Intl` does not expose them. Shipping 249 codes typed from memory
 would have been unverifiable data in a column documented as authoritative. It returns
 in Phase 6 if travel documents need it, sourced properly then.
+
+---
+
+## 16. Live map: findings from the Phase 1 spike
+
+**Decided.** MapLibre GL is confirmed for Phase 4. The spike that proved it has been
+deleted; these are its findings.
+
+**No basemap is needed.** A style with `sources: {}` and a single background layer
+renders fine. Stations, route arcs and aircraft all come from our own data, so the map
+has no tile provider, no API key and no network dependency. A real basemap remains
+optional, not structural.
+
+**Great-circle arcs render correctly**, visibly bowed against a straight line, with the
+antimeridian split working — `greatCirclePath` output drops straight into a GeoJSON
+line source.
+
+**Rotation must not use text.** `icon-rotate` on a symbol layer takes a compass heading
+directly, but the icon has to be an _image_. Any `text-field` — a unicode aircraft
+glyph, a station label, a callsign — requires font PBFs from a `glyphs` URL, which is
+exactly the network dependency the offline style avoids. The spike generated its marker
+to an `ImageData` at runtime instead. Phase 4 needs the same approach, plus either
+bundled fonts or an HTML overlay for labels.
+
+**Marker count is not the bottleneck.** Updating the aircraft source and rendering a
+frame measured ~33 ms flat from 8 markers to 500 — that figure is the frame interval,
+not the data cost, which stayed below measurement noise throughout. The live map will
+be frame-bound rather than data-bound at any fleet size this airline will have.
+
+### Two Vite configuration requirements, found the hard way
+
+Both are in `apps/web/vite.config.ts` and both are load-bearing:
+
+1. **`optimizeDeps.exclude` must list `maplibre-gl`.** Its renderer runs in a Web
+   Worker, and Vite's dependency pre-bundler rewrites the import so the worker fails to
+   load (`ERR_FAILED` on `maplibre-gl-worker.mjs`). Every GeoJSON source then sits at
+   `loaded: false` for ever while the background layer paints normally — the map looks
+   alive with nothing on it, and no error is raised.
+2. **An anchored alias to `maplibre-gl/dist/maplibre-gl.mjs`.** With pre-bundling
+   excluded, Vite resolves the bare specifier to the CJS `maplibre-gl.js`, which has no
+   named exports. The alias must be a `/^maplibre-gl$/` regex, not a plain string:
+   string aliases are prefix matches and would rewrite
+   `maplibre-gl/dist/maplibre-gl.css` into a path inside the `.mjs` file.
+
+### A diagnostic note worth keeping
+
+Most of the spike was spent chasing a map that rendered nothing, and two of the three
+hypotheses along the way were wrong. The one that cost most: **the in-app browser pane
+was hidden**, and `requestAnimationFrame` does not fire in a hidden pane. MapLibre
+renders entirely through rAF, so the map never painted a frame and looked identically
+broken whatever the real cause. It briefly led to blaming maplibre-gl v6 and
+downgrading to v5 — a false diagnosis, since v5 failed the same way. v6 is what shipped.
+
+The lesson for later phases: **verify anything canvas- or animation-based in Playwright,
+not the preview pane.** `scripts` are cheap; a wrong diagnosis is not.

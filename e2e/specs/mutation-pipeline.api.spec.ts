@@ -67,8 +67,11 @@ test.describe("mutation pipeline", () => {
 
     expect(body.total, "the brief asks for 20 or more destinations").toBeGreaterThanOrEqual(20);
 
+    // Belgrade is the seeded hub. Asserted as present rather than as the only
+    // one: an operator may legitimately mark another base through the
+    // application, and the seed does not own rows it did not create.
     const hubs = body.items.filter((airport) => airport.isHub);
-    expect(hubs.map((hub) => hub.iataCode)).toEqual(["BEG"]);
+    expect(hubs.map((hub) => hub.iataCode)).toContain("BEG");
 
     // Coordinates are the whole reason airports come first. Null Island here
     // would put the live map in the Atlantic.

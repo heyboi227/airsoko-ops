@@ -9,17 +9,25 @@ import { ACCOUNTS, DEMO_PASSWORD } from "../support/api.ts";
  * the interface does not offer actions the API would refuse.
  */
 
+/** Signs in. The app now opens on the Dashboard. */
 async function signInAs(page: Page, email: string) {
   await page.goto("/");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(DEMO_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+}
+
+/** Signs in and opens the station list. */
+async function openNetworkAs(page: Page, email: string) {
+  await signInAs(page, email);
+  await page.getByRole("link", { name: "Airports & Routes" }).click();
   await expect(page.getByRole("heading", { name: "Airports & Routes" })).toBeVisible();
 }
 
 test.describe("Airports", () => {
   test("the seeded network loads and can be filtered", async ({ page }) => {
-    await signInAs(page, ACCOUNTS.commercialManager);
+    await openNetworkAs(page, ACCOUNTS.commercialManager);
 
     await expect(page.getByRole("cell", { name: "BEG", exact: false }).first()).toBeVisible();
 
@@ -31,7 +39,7 @@ test.describe("Airports", () => {
   });
 
   test("the confirmation shows what the server found, before writing", async ({ page }) => {
-    await signInAs(page, ACCOUNTS.commercialManager);
+    await openNetworkAs(page, ACCOUNTS.commercialManager);
 
     await page.getByRole("button", { name: "Add airport" }).click();
 
@@ -61,7 +69,7 @@ test.describe("Airports", () => {
   test("a Booking Administrator is not offered actions the API would refuse", async ({
     page,
   }) => {
-    await signInAs(page, ACCOUNTS.bookingAdmin);
+    await openNetworkAs(page, ACCOUNTS.bookingAdmin);
 
     await expect(page.getByRole("button", { name: "Add airport" })).toBeDisabled();
     // The section is still readable -- the boundary is on writing, not seeing.

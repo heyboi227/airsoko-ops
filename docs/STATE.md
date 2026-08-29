@@ -2,83 +2,60 @@
 
 Where the build currently stands. Updated at the end of every phase.
 
-**Phase 0 — complete.** Next: Phase 1 (Foundation and map spike).
+**Phase 1 — complete.** Next: Phase 2 (Fleet).
 
 ---
 
-## What Phase 0 delivered
+## What Phase 1 delivered
 
-The foundations, and one entity through every layer to prove them.
-
-| Area                                                      | Status                         |
-| --------------------------------------------------------- | ------------------------------ |
-| Monorepo, workspaces, TypeScript strict everywhere        | Done                           |
-| PostgreSQL 18 + Drizzle, migration `0000_many_preak.sql`  | Done                           |
-| Domain kernel: geo, time, policy, intent pipeline         | Done, 46 unit tests            |
-| Mutation pipeline with audit and alerts, transactional    | Done                           |
-| RBAC: 6 roles, 36 permissions, enforced API-side          | Done                           |
-| Airports end to end: list, filter, create, edit, withdraw | Done                           |
-| Audit read endpoint (`GET /api/audit`)                    | Done, minimal                  |
-| App shell, navigation, login, theme                       | Done, minimal                  |
-| Deterministic seed: 32 countries, 36 airports, 7 users    | Done, byte-identical on reseed |
-| CI: types, lint, format, unit, build, acceptance          | Done                           |
-| Acceptance scenarios A–G committed                        | 15 passing, 15 `fixme`         |
+| Area                                                 | Status                                 |
+| ---------------------------------------------------- | -------------------------------------- |
+| Airport reference import from OurAirports, ISO-gated | Done, 1,396 stations                   |
+| Full operational schema, 29 tables by domain         | Done, migration `0002`                 |
+| Fleet: 24 aircraft, 5 types, 47 cabins, 3,559 seats  | Done                                   |
+| Network: 72 routes, 102 recurring schedules          | Done                                   |
+| Flights: 806 across a 9-day window, with rotations   | Done                                   |
+| Dashboard on real queries                            | Done                                   |
+| Station autofill from the reference                  | Done                                   |
+| Live map spike                                       | Done, findings recorded, spike deleted |
 
 ### Verified
 
-- 46 domain unit tests pass, including a full DST week either side of the
-  Europe/Belgrade spring-forward and autumn-back transitions.
-- All five workspaces typecheck under `strict` with `noUncheckedIndexedAccess` and
-  `exactOptionalPropertyTypes`.
-- Production build produces `apps/api/dist/main.js` and `apps/web/dist`.
+- 46 domain unit tests and 22 acceptance tests pass; `npm run verify` exits 0.
+- The seed is deterministic given a reference date — same-day reseeds are byte-identical
+  by checksum, verified across flights, aircraft and status.
+- The dashboard's figures are all derived from the flights themselves. Nothing about
+  the operation is stored twice, so the dashboard and the flight data cannot disagree.
+- The live map renders stations, great-circle arcs and heading-rotated aircraft with no
+  basemap, no API key and no network. Marker updates are frame-bound, not data-bound,
+  flat from 8 to 500 markers.
 
-- Migration applies to a clean Postgres 18 and the seed loads 32 countries, 36
-  airports and 7 users. Reseeding three times produced an identical MD5 across
-  airports, users and countries — ids, password hashes and timestamps included.
-- The full acceptance suite runs green against the live database: **15 passed, 15
-  skipped** (the `fixme` scenarios), 0 failed. That covers preview-without-writing,
-  a blocking conflict naming the real colliding record, warning acknowledgement by
-  code, the audit entry carrying before/after and reason, and the Scenario G
-  permission boundary asserted at the API with no browser involved.
-- `npm run verify` exits 0: typecheck, lint, format, 46 unit tests, both builds.
+### Known simplifications
 
-### Not yet verified
-
-- Nothing outside Airports has been exercised, because nothing outside Airports
-  exists yet.
-
----
-
-## What is deliberately absent
-
-Eleven of the twelve navigation sections show an honest "not built yet" panel naming
-the phase that builds them. That is a choice, not an omission: the brief rules out
-"fake controls that do nothing", and a convincing mock would be worse than nothing.
-
-The airport `deactivate` intent evaluates route and upcoming-flight dependencies
-against hard-coded zeroes, because routes and flights do not exist yet. The rule is
-real and tested; its inputs become real in Phases 2 and 3.
+- **No overnight repositioning.** Real rotations end the day at a base; this one leaves
+  tails where their last sector ended, so unassigned flights accumulate across the
+  window (about 11 on day one, 23 by day six). Those flights are genuine conflicts and
+  feed the alert work in Phase 7, but the growth is a modelling gap rather than a
+  design.
+- **Crew and bookings are absent**, so the dashboard reports those sections as
+  unavailable with the phase that builds them, never as zero.
+- **Aircraft status is not driven by flights yet.** The fleet's `status` column is
+  seeded, while "airborne" on the dashboard is read from the flights themselves — the
+  fact rather than a second copy of it. Phase 2 reconciles the two.
 
 ---
 
-## Next: Phase 1 — Foundation and map spike
+## Next: Phase 2 — Fleet
 
-**Gate:** every route navigable; the spike answers tiles, rotation, projection and
-update cost; the spike is then deleted.
+**Gate:** an unavailable aircraft is not silently assignable; capacity derives from the
+cabin configuration and is never stored twice.
 
-1. Domain types and persistence for the full entity set — aircraft types and airframes,
-   cabins and seats, routes, schedules and flight instances, crew, bookings, alerts.
-   Migration and schema only; the screens come with their phases.
-2. Dashboard skeleton reading real metric queries against seeded data.
-3. Breadcrumbs, global search shell, notification surface.
-4. **Map spike** (throwaway): MapLibre renders with no network using a bundled offline
-   style; a marker rotates to heading; the telemetry provider interface compiles
-   against a stub; measure the cost of moving ~40 markers per tick.
-
-**Gate 0 is closed.** The database runs, the seed is deterministic, and the
-acceptance suite is green.
-
----
+1. Fleet overview: registration, type, status, location, current and next flight,
+   capacity, age, utilisation, maintenance state.
+2. Aircraft profile with cabin layout and an optional seat map.
+3. Amenities, configurable and assignable at aircraft and cabin level.
+4. Light maintenance: last check, next due, hours and cycles remaining, approaching-limit
+   warnings.
 
 ## Open questions
 
