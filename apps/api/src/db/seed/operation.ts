@@ -133,8 +133,10 @@ export async function seedFleet(): Promise<{ tails: number; cabins: number; seat
       serialNumber: entry.serialNumber,
       name: entry.name,
       deliveredOn: entry.deliveredOn,
-      status: entry.unavailable?.status ?? ("active" as const),
-      currentAirportId: airportId(entry.baseIata),
+      serviceability: entry.unavailable?.status ?? ("in_service" as const),
+      // Where the airline bases the tail. Its actual position comes from the
+      // last flight it flew -- see deriveFleetState.
+      baseAirportId: airportId(entry.baseIata),
       // Hours and cycles scale with age, so an older tail reads as older.
       totalHours: hoursForAge(entry.deliveredOn, type.icaoTypeCode),
       totalCycles: cyclesForAge(entry.deliveredOn, type.icaoTypeCode),
@@ -151,8 +153,8 @@ export async function seedFleet(): Promise<{ tails: number; cabins: number; seat
     .onConflictDoUpdate({
       target: aircraft.id,
       set: {
-        status: sql`excluded.status`,
-        currentAirportId: sql`excluded.current_airport_id`,
+        serviceability: sql`excluded.serviceability`,
+        baseAirportId: sql`excluded.base_airport_id`,
         totalHours: sql`excluded.total_hours`,
         totalCycles: sql`excluded.total_cycles`,
         notes: sql`excluded.notes`,

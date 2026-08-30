@@ -1,7 +1,7 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 import {
   AIRCRAFT_BODY_TYPES,
-  AIRCRAFT_STATUSES,
+  AIRCRAFT_SERVICEABILITY,
   ALERT_SEVERITIES,
   ALERT_STATUSES,
   AMENITY_SCOPES,
@@ -39,7 +39,10 @@ export const alertStatusEnum = pgEnum("alert_status", ALERT_STATUSES);
 
 export const routeStatusEnum = pgEnum("route_status", ROUTE_STATUSES);
 
-export const aircraftStatusEnum = pgEnum("aircraft_status", AIRCRAFT_STATUSES);
+export const aircraftServiceabilityEnum = pgEnum(
+  "aircraft_serviceability",
+  AIRCRAFT_SERVICEABILITY,
+);
 export const aircraftBodyTypeEnum = pgEnum("aircraft_body_type", AIRCRAFT_BODY_TYPES);
 export const maintenanceCheckTypeEnum = pgEnum(
   "maintenance_check_type",

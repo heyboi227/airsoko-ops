@@ -95,24 +95,59 @@ export type DelayReason = z.infer<typeof delayReasonSchema>;
 
 // --- Fleet -----------------------------------------------------------------
 
-export const AIRCRAFT_STATUSES = [
-  "active",
-  "airborne",
-  "on_ground",
-  "turnaround",
+/**
+ * An airframe has two states, and conflating them is a mistake this codebase
+ * made once already.
+ *
+ * **Serviceability** is what the airline has decided about the aircraft: it is
+ * available for service, or it is in the hangar, or parked, or withdrawn. It is
+ * stored, because nothing else can tell you it.
+ *
+ * **Operational state** is what the aircraft is doing right now: flying,
+ * turning round, sitting on a stand. It is *derived* from the flights, never
+ * stored -- a flight in the air is the fact, and a column claiming otherwise is
+ * a second copy of the truth waiting to drift. It drifted within a day: a tail
+ * was airborne out of Zurich while its row still read "active" at Belgrade.
+ */
+export const AIRCRAFT_SERVICEABILITY = [
+  "in_service",
   "maintenance",
   "stored",
   "out_of_service",
 ] as const;
-export const aircraftStatusSchema = z.enum(AIRCRAFT_STATUSES);
-export type AircraftStatus = z.infer<typeof aircraftStatusSchema>;
+export const aircraftServiceabilitySchema = z.enum(AIRCRAFT_SERVICEABILITY);
+export type AircraftServiceability = z.infer<typeof aircraftServiceabilitySchema>;
 
-/** Statuses in which an aircraft may not be assigned to a new flight. */
-export const UNASSIGNABLE_AIRCRAFT_STATUSES = [
+/** Serviceability states in which an aircraft may not be assigned to a flight. */
+export const UNSERVICEABLE = [
   "maintenance",
   "stored",
   "out_of_service",
-] as const satisfies readonly AircraftStatus[];
+] as const satisfies readonly AircraftServiceability[];
+
+export const AIRCRAFT_OPERATIONAL_STATES = [
+  "airborne",
+  "turnaround",
+  "on_ground",
+  /** Not available for service at all -- the serviceability says so. */
+  "unavailable",
+] as const;
+export const aircraftOperationalStateSchema = z.enum(AIRCRAFT_OPERATIONAL_STATES);
+export type AircraftOperationalState = z.infer<typeof aircraftOperationalStateSchema>;
+
+export const SERVICEABILITY_LABELS: Readonly<Record<AircraftServiceability, string>> = {
+  in_service: "In service",
+  maintenance: "Maintenance",
+  stored: "Stored",
+  out_of_service: "Out of service",
+};
+
+export const OPERATIONAL_STATE_LABELS: Readonly<Record<AircraftOperationalState, string>> = {
+  airborne: "Airborne",
+  turnaround: "Turnaround",
+  on_ground: "On ground",
+  unavailable: "Unavailable",
+};
 
 export const AIRCRAFT_BODY_TYPES = ["narrow_body", "wide_body", "regional"] as const;
 export const aircraftBodyTypeSchema = z.enum(AIRCRAFT_BODY_TYPES);

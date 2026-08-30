@@ -8,6 +8,7 @@ import { logger } from "../../logger.ts";
 import { resolveCountries, resolveStations } from "./reference/index.ts";
 import { DEMO_PASSWORD, SEED_USERS, deterministicSalt } from "./users.ts";
 import { seedAircraftTypes, seedAirlines, seedFleet, seedNetwork } from "./operation.ts";
+import { seedAmenities, seedMaintenance } from "./maintenance.ts";
 
 /**
  * The seed is idempotent and deterministic.
@@ -194,6 +195,17 @@ async function main(): Promise<void> {
   );
   logger.info(
     `  ${network.rotationDelays} sectors pushed late by a late inbound (rotation delay)`,
+  );
+
+  const maintenance = await seedMaintenance(day);
+  logger.info(
+    `  checks:    ${maintenance.events} maintenance events; ` +
+      `${maintenance.approaching} aircraft approaching a limit, ${maintenance.overdue} overdue`,
+  );
+
+  const amenityCounts = await seedAmenities();
+  logger.info(
+    `  amenities: ${amenityCounts.amenities} configured, ${amenityCounts.assignments} assignments`,
   );
 
   if (network.unassigned.length > 0) {

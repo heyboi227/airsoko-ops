@@ -12,7 +12,7 @@ import {
 import { instant, lifecycle } from "./common.ts";
 import {
   aircraftBodyTypeEnum,
-  aircraftStatusEnum,
+  aircraftServiceabilityEnum,
   cabinClassEnum,
   maintenanceCheckTypeEnum,
 } from "./enums.ts";
@@ -64,9 +64,22 @@ export const aircraft = pgTable(
     /** Air Soko names its aircraft after Serbian rivers. */
     name: text("name"),
     deliveredOn: date("delivered_on").notNull(),
-    status: aircraftStatusEnum("status").notNull().default("active"),
-    /** Where the airframe is now. Moves as flights complete. */
-    currentAirportId: uuid("current_airport_id").references(() => airports.id),
+    /**
+     * What the airline has decided about this airframe. Stored, because
+     * nothing else can tell you it.
+     *
+     * What the aircraft is *doing* -- flying, turning round, parked -- is
+     * derived from its flights and deliberately not a column here. See
+     * `deriveFleetState` in the domain package.
+     */
+    serviceability: aircraftServiceabilityEnum("serviceability")
+      .notNull()
+      .default("in_service"),
+    /**
+     * Where the airline plans this tail to be based. Its *actual* position
+     * comes from the last flight it flew, which is the only thing that knows.
+     */
+    baseAirportId: uuid("base_airport_id").references(() => airports.id),
     totalHours: integer("total_hours").notNull().default(0),
     totalCycles: integer("total_cycles").notNull().default(0),
 
@@ -87,8 +100,8 @@ export const aircraft = pgTable(
   (table) => [
     uniqueIndex("aircraft_registration_key").on(table.registration),
     index("aircraft_type_idx").on(table.aircraftTypeId),
-    index("aircraft_status_idx").on(table.status),
-    index("aircraft_location_idx").on(table.currentAirportId),
+    index("aircraft_serviceability_idx").on(table.serviceability),
+    index("aircraft_base_idx").on(table.baseAirportId),
   ],
 );
 

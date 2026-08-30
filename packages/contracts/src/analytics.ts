@@ -37,13 +37,17 @@ export type FlightSummary = z.infer<typeof flightSummarySchema>;
 
 export const fleetSummarySchema = z.object({
   total: z.number().int(),
-  active: z.number().int(),
+  /** Airframes the airline considers available. Stored state. */
+  inService: z.number().int(),
+  /** Derived from the flights, never stored -- see docs/DECISIONS.md. */
   airborne: z.number().int(),
   onGround: z.number().int(),
   turnaround: z.number().int(),
   maintenance: z.number().int(),
   stored: z.number().int(),
   outOfService: z.number().int(),
+  /** Airframes with a check approaching or already overdue. */
+  maintenanceDue: z.number().int(),
   /** Sectors flown today across the fleet. */
   sectorsToday: z.number().int(),
   /** Sectors per available airframe -- the usual short-haul utilisation figure. */
