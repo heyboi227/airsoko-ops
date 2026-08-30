@@ -48,9 +48,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: "/fleet",
     label: "Fleet",
     permission: "aircraft:read",
-    arrivesInPhase: 2,
-    summary:
-      "Aircraft types and registered airframes, cabin configuration, utilisation, and light maintenance with approaching-limit warnings.",
+    arrivesInPhase: null,
+    summary: "",
   },
   {
     path: "/crew",
@@ -87,9 +86,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: "/amenities",
     label: "Amenities",
     permission: "commercial:read",
-    arrivesInPhase: 2,
-    summary:
-      "Configurable amenities assignable at aircraft, cabin, fare-product and flight level, with predictable resolution when several apply.",
+    arrivesInPhase: null,
+    summary: "",
   },
   {
     path: "/reports",

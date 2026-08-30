@@ -18,6 +18,7 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import { BarChart } from "@mui/x-charts/BarChart";
 import type { Dashboard } from "@airsoko/contracts";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
@@ -377,6 +378,14 @@ export function DashboardPage() {
               >
                 <Chip size="small" label={`${fleet.total} tails`} />
                 <Chip size="small" color="primary" label={`${fleet.airborne} airborne`} />
+                {fleet.turnaround > 0 ? (
+                  <Chip
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    label={`${fleet.turnaround} turnaround`}
+                  />
+                ) : null}
                 <Chip size="small" variant="outlined" label={`${fleet.onGround} on ground`} />
                 {fleet.maintenance > 0 ? (
                   <Chip
@@ -387,6 +396,24 @@ export function DashboardPage() {
                 ) : null}
                 {fleet.stored > 0 ? (
                   <Chip size="small" variant="outlined" label={`${fleet.stored} stored`} />
+                ) : null}
+                {fleet.outOfService > 0 ? (
+                  <Chip
+                    size="small"
+                    color="error"
+                    label={`${fleet.outOfService} out of service`}
+                  />
+                ) : null}
+                {fleet.maintenanceDue > 0 ? (
+                  <Chip
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    component={RouterLink}
+                    to="/fleet?maintenanceDue=1"
+                    clickable
+                    label={`${fleet.maintenanceDue} check due`}
+                  />
                 ) : null}
               </Stack>
             </Paper>

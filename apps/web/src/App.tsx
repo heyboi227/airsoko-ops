@@ -6,7 +6,9 @@ import { useAuth } from "./auth/AuthContext.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { AirportsPage } from "./pages/AirportsPage.tsx";
+import { AmenitiesPage } from "./pages/AmenitiesPage.tsx";
 import { DashboardPage } from "./pages/DashboardPage.tsx";
+import { FleetPage } from "./pages/FleetPage.tsx";
 import { PhasePlaceholder } from "./pages/PhasePlaceholder.tsx";
 import { NAV_ITEMS } from "./shell/navigation.ts";
 
@@ -56,9 +58,11 @@ export function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/network" element={<AirportsPage />} />
-            {NAV_ITEMS.filter(
-              (item) => item.path !== "/network" && item.path !== "/dashboard",
-            ).map((item) => (
+            <Route path="/fleet" element={<FleetPage />} />
+            <Route path="/amenities" element={<AmenitiesPage />} />
+            {/* Everything still to be built gets an honest placeholder; a section
+                with no phase left to arrive in has a route above. */}
+            {NAV_ITEMS.filter((item) => item.arrivesInPhase !== null).map((item) => (
               <Route key={item.path} path={item.path} element={<PhasePlaceholder />} />
             ))}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
