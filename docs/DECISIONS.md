@@ -283,3 +283,95 @@ downgrading to v5 — a false diagnosis, since v5 failed the same way. v6 is wha
 
 The lesson for later phases: **verify anything canvas- or animation-based in Playwright,
 not the preview pane.** `scripts` are cheap; a wrong diagnosis is not.
+
+---
+
+## 17. Serviceability and operational state are two different columns
+
+**Decided.** `aircraft.status` is gone. What replaced it is one stored column and one
+derived value that are never the same kind of fact:
+
+- **`serviceability`** — `in_service`, `maintenance`, `stored`, `out_of_service`. What
+  the airline has decided about the airframe. Stored, because nothing else implies it.
+- **`operationalState`** — `airborne`, `turnaround`, `on_ground`, `unavailable`.
+  What the airframe is doing. Computed from its flights on every read, never written.
+
+The old single column mixed the two, and the seed proved why that fails: it wrote
+`airborne` on aircraft with no flight assigned, so the fleet list and the flight list
+disagreed and neither could be called wrong. Migration `0003` maps
+`active | airborne | on_ground | turnaround` onto `in_service` and drops the rest.
+
+Serviceability wins where they conflict: an airframe in the hangar reports
+`unavailable` regardless of what any stale flight row says.
+
+Written by hand rather than generated: drizzle-kit cannot know that `active` means
+`in_service`, and needs a TTY to disambiguate an enum rename.
+
+---
+
+## 18. An airborne aircraft reports no airport
+
+**Decided.** `locationIata` is `null` while an aircraft is in the air, rather than
+holding its origin or its destination.
+
+Either choice would be a small lie that a map renders as a large one — a marker parked
+at Heathrow for an aircraft over the Atlantic. Null is the honest answer to "which
+airport is it at", and the current flight is right there for anything that needs to know
+where it is going. The fleet table shows "in flight" with a tooltip saying why.
+
+---
+
+## 19. Capacity is summed from the cabins and stored nowhere
+
+**Decided.** There is no `seat_capacity` column. Every seat total in the product —
+fleet list, aircraft profile, dashboard, and eventually the booking inventory — is
+`SUM(aircraft_cabins.seat_count)`.
+
+A stored total is a second copy of the layout, and the two drift the first time someone
+reconfigures a cabin without touching the aircraft row. Phase 6 will need capacity to
+change when an aircraft is swapped; that has to move the layout, not a number beside it.
+
+Pinned by an acceptance test that walks the whole fleet and fails if any reported
+capacity disagrees with the cabins it is made of.
+
+---
+
+## 20. Maintenance limits normalise before they compare
+
+**Decided.** Checks fall due against calendar time, flight hours or cycles, whichever
+arrives first. `maintenanceStanding` converts each to "fraction of its warning window
+still remaining", takes the tightest, and reports which one it was as
+`limitingFactor`.
+
+Comparing raw numbers is meaningless — 40 days, 300 hours and 200 cycles are not
+comparable quantities. Normalising against each limit's own warning window is, and
+naming the binding limit is the part a fleet manager acts on: "hours" and "calendar"
+call for different responses.
+
+The seed deliberately places four tails near or past a limit, because a uniform hash
+across the fleet left exactly one airframe with anything to show.
+
+---
+
+## 21. Amenity resolution: narrowest wins, and at a tie the withdrawal wins
+
+**Decided.** Amenities attach at four levels and usually several apply at once. The
+effective set is resolved by `resolveAmenities` in `packages/domain`, on two rules:
+
+1. **Narrowest scope wins** — flight, then fare product, then cabin, then aircraft. A
+   broader level states the norm; a narrower one states this case.
+2. **At equal specificity, the withdrawal wins.** Two assignments at the same level are
+   a data problem, but it still has to resolve to something, and the two answers are not
+   equally harmful. Promising a passenger power that is not there is worse than staying
+   quiet about power that is.
+
+Because `included` can be false, a narrower level can remove what a broader one grants.
+That is the mechanism, not a workaround: an aircraft fitted with Wi-Fi that is
+unserviceable today is a flight-level exclusion, not an edit to the airframe record.
+
+Silence is not exclusion. An amenity nothing mentions is absent from the resolved set
+rather than present-and-false, so "we do not offer this" and "nobody has said" stay
+distinguishable.
+
+The resolved result carries `overridden` — every assignment that applied and lost. An
+operator asking why a cabin shows no Wi-Fi reads the answer instead of inferring it.

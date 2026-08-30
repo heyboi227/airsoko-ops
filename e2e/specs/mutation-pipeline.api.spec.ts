@@ -77,7 +77,9 @@ test.describe("mutation pipeline", () => {
     // would put the live map in the Atlantic.
     for (const airport of body.items) {
       expect(Math.abs(airport.latitude) + Math.abs(airport.longitude)).toBeGreaterThan(0.001);
-      expect(airport.timeZone).toMatch(/^[A-Za-z_]+\/[A-Za-z_+-]+$|^UTC$/);
+      // IANA names can carry a third component -- America/Argentina/Buenos_Aires,
+      // America/Indiana/Indianapolis -- so this is not a two-segment format.
+      expect(airport.timeZone).toMatch(/^([A-Za-z_]+\/)+[A-Za-z_+-]+$|^UTC$/);
     }
   });
 
