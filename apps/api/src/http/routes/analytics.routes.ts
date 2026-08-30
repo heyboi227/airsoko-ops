@@ -3,7 +3,8 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { dashboardQuerySchema, type Dashboard } from "@airsoko/contracts";
 import { DEFAULT_POLICY, formatLocalDate, partsInZone } from "@airsoko/domain";
 import { db } from "../../db/client.ts";
-import { aircraft, airports, flightInstances, routes } from "../../db/schema/index.ts";
+import { airports, flightInstances, routes } from "../../db/schema/index.ts";
+import { loadFleet } from "../../fleet/state.ts";
 import { requireAuth, requirePermission } from "../auth.ts";
 import { ApiProblem } from "../errors.ts";
 
@@ -110,18 +111,15 @@ analyticsRouter.get(
     const delayed = flightRow?.delayed ?? 0;
 
     // --- Fleet --------------------------------------------------------------
-    const [fleetRow] = await db
-      .select({
-        total: sql<number>`count(*)::int`,
-        active: sql<number>`count(*) filter (where ${aircraft.status} = 'active')::int`,
-        airborne: sql<number>`count(*) filter (where ${aircraft.status} = 'airborne')::int`,
-        onGround: sql<number>`count(*) filter (where ${aircraft.status} = 'on_ground')::int`,
-        turnaround: sql<number>`count(*) filter (where ${aircraft.status} = 'turnaround')::int`,
-        maintenance: sql<number>`count(*) filter (where ${aircraft.status} = 'maintenance')::int`,
-        stored: sql<number>`count(*) filter (where ${aircraft.status} = 'stored')::int`,
-        outOfService: sql<number>`count(*) filter (where ${aircraft.status} = 'out_of_service')::int`,
-      })
-      .from(aircraft);
+    // Read through the same loader the fleet pages use. Counting operational
+    // state here with its own SQL would be a second implementation of "is this
+    // aircraft flying", and the two would eventually disagree -- which is the
+    // failure this phase exists to remove, not to repeat.
+    const fleet = await loadFleet(now, { serviceDate: date });
+    const countState = (state: string) =>
+      fleet.filter((item) => item.state.operationalState === state).length;
+    const countServiceability = (value: string) =>
+      fleet.filter((item) => item.serviceability === value).length;
 
     const [sectorRow] = await db
       .select({ sectors: sql<number>`count(*)::int` })
@@ -134,15 +132,7 @@ analyticsRouter.get(
         ),
       );
 
-    // Airborne is read from the flights rather than the aircraft row: a flight in
-    // the air is the fact, and an aircraft status that disagreed with it would be
-    // a second copy of the same truth waiting to drift.
-    const airborneNow = flightRow?.airborne ?? 0;
-    const availableTails =
-      (fleetRow?.total ?? 0) -
-      (fleetRow?.maintenance ?? 0) -
-      (fleetRow?.stored ?? 0) -
-      (fleetRow?.outOfService ?? 0);
+    const availableTails = countServiceability("in_service");
 
     // --- Movements through the day -----------------------------------------
     const movementRows = await db
@@ -212,7 +202,7 @@ analyticsRouter.get(
         boarding: flightRow?.boarding ?? 0,
         gateClosed: flightRow?.gateClosed ?? 0,
         taxiOut: flightRow?.taxiOut ?? 0,
-        airborne: airborneNow,
+        airborne: flightRow?.airborne ?? 0,
         taxiIn: flightRow?.taxiIn ?? 0,
         arrived: flightRow?.arrived ?? 0,
         diverted: flightRow?.diverted ?? 0,
@@ -223,14 +213,19 @@ analyticsRouter.get(
         withoutAircraft: flightRow?.withoutAircraft ?? 0,
       },
       fleet: {
-        total: fleetRow?.total ?? 0,
-        active: fleetRow?.active ?? 0,
-        airborne: airborneNow,
-        onGround: Math.max(0, (fleetRow?.active ?? 0) - airborneNow),
-        turnaround: fleetRow?.turnaround ?? 0,
-        maintenance: fleetRow?.maintenance ?? 0,
-        stored: fleetRow?.stored ?? 0,
-        outOfService: fleetRow?.outOfService ?? 0,
+        total: fleet.length,
+        inService: availableTails,
+        airborne: countState("airborne"),
+        onGround: countState("on_ground"),
+        turnaround: countState("turnaround"),
+        maintenance: countServiceability("maintenance"),
+        stored: countServiceability("stored"),
+        outOfService: countServiceability("out_of_service"),
+        maintenanceDue: fleet.filter(
+          (item) =>
+            item.maintenance.urgency === "approaching" ||
+            item.maintenance.urgency === "exceeded",
+        ).length,
         sectorsToday: sectorRow?.sectors ?? 0,
         sectorsPerAvailableAircraft:
           availableTails === 0
