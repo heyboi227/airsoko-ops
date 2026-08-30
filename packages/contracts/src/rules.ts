@@ -27,6 +27,19 @@ export const RULE_CODES = [
   "AIRCRAFT_CABIN_CAPACITY_BELOW_SOLD",
   "AIRCRAFT_TYPE_MISMATCH_WITH_SCHEDULE",
 
+  // --- Aircraft records ----------------------------------------------------
+  // Distinct codes rather than one AIRCRAFT_INVALID, because the operator
+  // acknowledges a warning *by code*: a single code covering two conditions
+  // would let one tick accept both.
+  "AIRCRAFT_REGISTRATION_IN_USE",
+  "AIRCRAFT_REGISTRATION_PREVIOUSLY_USED",
+  "AIRCRAFT_SERIAL_IN_USE",
+  "AIRCRAFT_NO_CABIN_CONFIGURATION",
+  "AIRCRAFT_CABIN_LAYOUT_INVALID",
+  "AIRCRAFT_DELIVERY_DATE_FUTURE",
+  "AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET",
+  "AIRCRAFT_REGISTRATION_PREFIX_UNUSUAL",
+
   // --- Crew ----------------------------------------------------------------
   "CREW_POSITION_UNFILLED",
   "CREW_OVERLAPPING_DUTY",
@@ -51,6 +64,11 @@ export const RULE_CODES = [
   "BOOKING_AFFECTED_BY_CHANGE",
   "SEAT_ASSIGNMENTS_ORPHANED",
   "FARE_PRODUCT_CABIN_UNAVAILABLE",
+
+  // --- Amenities -----------------------------------------------------------
+  "AMENITY_ASSIGNMENT_DUPLICATE",
+  "AMENITY_ASSIGNMENT_CONTRADICTS_EXISTING",
+  "AMENITY_WITHDRAWAL_GRANTS_NOTHING",
 ] as const;
 
 export const ruleCodeSchema = z.enum(RULE_CODES);
@@ -100,6 +118,7 @@ export const CONSEQUENCE_KINDS = [
   "map_visibility_changed",
   "analytics_restated",
   "occurrences_affected",
+  "amenity_resolution_changed",
 ] as const;
 export const consequenceKindSchema = z.enum(CONSEQUENCE_KINDS);
 export type ConsequenceKind = z.infer<typeof consequenceKindSchema>;
