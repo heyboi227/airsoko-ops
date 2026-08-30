@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   MenuItem,
   Paper,
@@ -18,12 +19,22 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import CheckIcon from "@mui/icons-material/Check";
 import BlockIcon from "@mui/icons-material/Block";
 import RemoveIcon from "@mui/icons-material/Remove";
-import { CABIN_CLASSES, type AmenityScope, type CabinClass } from "@airsoko/contracts";
+import {
+  CABIN_CLASSES,
+  type AmenityScope,
+  type CabinClass,
+  type MutationPreview,
+  type RuleCode,
+} from "@airsoko/contracts";
 import { SCOPE_EXPLANATIONS } from "@airsoko/domain";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
+import { useAuth } from "../auth/AuthContext.tsx";
+import { AmenityAssignmentDialog } from "../components/AmenityAssignmentDialog.tsx";
+import { MutationConfirmDialog } from "../components/MutationConfirmDialog.tsx";
 
 /**
  * Amenities, and the question that actually matters about them: when four
@@ -64,6 +75,19 @@ interface ResolvedRow {
 interface MatrixResponse {
   aircraft: { id: string; registration: string };
   cabins: { cabinClass: CabinClass; seatCount: number; amenities: ResolvedRow[] }[];
+}
+
+interface AssignmentRow {
+  id: string;
+  amenityId: string;
+  amenityCode: string;
+  amenityName: string;
+  category: string;
+  scope: AmenityScope;
+  included: boolean;
+  aircraftId: string | null;
+  cabinClass: CabinClass | null;
+  note: string | null;
 }
 
 interface FleetOption {
@@ -160,6 +184,67 @@ export function AmenitiesPage() {
       cabins.flatMap((cabin) => cabin.amenities).map((entry) => [entry.amenityCode, entry]),
     ).values(),
   ].sort((a, b) => (a.name < b.name ? -1 : 1));
+
+  const { can } = useAuth();
+  const [assigning, setAssigning] = useState(false);
+  const [removing, setRemoving] = useState<AssignmentRow | null>(null);
+  const [removePreview, setRemovePreview] = useState<MutationPreview | null>(null);
+  const [removeBlocked, setRemoveBlocked] = useState<string | null>(null);
+
+  const assignments = useQuery({
+    queryKey: ["amenities", "assignments"],
+    queryFn: () => apiRequest<{ items: AssignmentRow[] }>("/api/amenities/assignments"),
+  });
+
+  // Everything that could decide an answer for the selected airframe: its own
+  // aircraft-level rows, plus the cabin-level rows for the cabins it has.
+  const cabinClasses = new Set(cabins.map((cabin) => cabin.cabinClass));
+  const reaching = (assignments.data?.items ?? []).filter((row) =>
+    row.scope === "aircraft"
+      ? row.aircraftId === aircraftId
+      : row.scope === "cabin" && row.cabinClass !== null && cabinClasses.has(row.cabinClass),
+  );
+
+  async function reviewRemoval(row: AssignmentRow) {
+    setRemoving(row);
+    setRemovePreview(null);
+    setRemoveBlocked(null);
+    try {
+      setRemovePreview(
+        await apiRequest<MutationPreview>(`/api/amenities/assignments/${row.id}/remove`, {
+          method: "POST",
+          body: { mutation: { preview: true } },
+        }),
+      );
+    } catch (error) {
+      setRemoveBlocked(
+        error instanceof ApiRequestError
+          ? error.message
+          : "Could not reach the operations API.",
+      );
+    }
+  }
+
+  const removeAssignment = useMutation({
+    mutationFn: (options: { acknowledgedWarnings: RuleCode[]; reason?: string }) =>
+      apiRequest(`/api/amenities/assignments/${removing?.id}/remove`, {
+        method: "POST",
+        body: { mutation: { preview: false, ...options } },
+      }),
+    onSuccess: () => {
+      setRemoving(null);
+      setRemovePreview(null);
+      void assignments.refetch();
+      void matrix.refetch();
+    },
+    onError: (error) => {
+      setRemoveBlocked(
+        error instanceof ApiRequestError
+          ? error.message
+          : "The assignment could not be removed.",
+      );
+    },
+  });
 
   const categories = [...new Set((catalogue.data?.items ?? []).map((item) => item.category))];
 
@@ -271,6 +356,88 @@ export function AmenitiesPage() {
         )}
       </Paper>
 
+      {/* --- Assignments on this airframe --- */}
+      {aircraftId !== "" ? (
+        <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+          <Stack
+            direction="row"
+            sx={{ alignItems: "baseline", justifyContent: "space-between", mb: 1.5 }}
+          >
+            <Box>
+              <Typography variant="subtitle2">Assignments reaching this airframe</Typography>
+              <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                The rows above are the answer; these are what produced it. Cabin-level rows
+                apply to every airframe with that cabin, not only this one.
+              </Typography>
+            </Box>
+            {can("commercial:write") ? (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => setAssigning(true)}
+              >
+                Assign
+              </Button>
+            ) : null}
+          </Stack>
+
+          {reaching.length === 0 ? (
+            <Typography variant="body2" sx={{ color: "text.secondary" }}>
+              Nothing is assigned at aircraft or cabin level for this airframe.
+            </Typography>
+          ) : (
+            <Table size="small" aria-label="Assignments reaching this airframe">
+              <TableBody>
+                {reaching.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell sx={{ pl: 0, borderBottom: 0 }}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                        {row.included ? (
+                          <CheckIcon fontSize="small" color="success" />
+                        ) : (
+                          <BlockIcon fontSize="small" color="error" />
+                        )}
+                        <Typography variant="body2">{row.amenityName}</Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: 0 }}>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={SCOPE_COLOUR[row.scope]}
+                        label={
+                          row.scope === "cabin"
+                            ? `${CABIN_LABELS[row.cabinClass ?? "economy"]} cabin, fleet-wide`
+                            : "this airframe"
+                        }
+                        sx={{ height: 20, fontSize: 11 }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: 0 }}>
+                      <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                        {row.note ?? ""}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right" sx={{ pr: 0, borderBottom: 0 }}>
+                      {can("commercial:write") ? (
+                        <Button
+                          size="small"
+                          color="inherit"
+                          onClick={() => void reviewRemoval(row)}
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Paper>
+      ) : null}
+
       {/* --- Catalogue --- */}
       <Typography variant="subtitle2" gutterBottom>
         Catalogue
@@ -338,9 +505,47 @@ export function AmenitiesPage() {
       </Paper>
 
       <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mt: 1.5 }}>
-        {categories.length} categories across {CABIN_CLASSES.length} cabin classes. Editing
-        assignments arrives with fare products in Phase 6; what is shown here is resolved live.
+        {categories.length} categories across {CABIN_CLASSES.length} cabin classes. Aircraft and
+        cabin assignments are editable here. Fare-product scope arrives with fare products in
+        Phase 6 and flight scope with the schedule in Phase 3; both already resolve correctly.
       </Typography>
+
+      {assigning ? (
+        <AmenityAssignmentDialog
+          amenities={catalogue.data?.items ?? []}
+          aircraft={fleet.data?.items ?? []}
+          {...(aircraftId ? { defaultAircraftId: aircraftId } : {})}
+          onClose={() => setAssigning(false)}
+          onDone={() => {
+            void assignments.refetch();
+            void matrix.refetch();
+            void catalogue.refetch();
+          }}
+        />
+      ) : null}
+
+      {removing ? (
+        <MutationConfirmDialog
+          open
+          title={`Remove the ${removing.included ? "grant" : "withdrawal"} of ${removing.amenityName}?`}
+          intentDescription={
+            removing.included
+              ? `${removing.amenityName} stops being offered wherever this row was what granted it.`
+              : `${removing.amenityName} stops being withheld, so it becomes offered again wherever a broader level grants it.`
+          }
+          preview={removePreview}
+          loading={removeAssignment.isPending}
+          blockedMessage={removeBlocked}
+          destructive
+          confirmLabel="Remove"
+          onCancel={() => {
+            setRemoving(null);
+            setRemovePreview(null);
+            setRemoveBlocked(null);
+          }}
+          onConfirm={(options) => removeAssignment.mutate(options)}
+        />
+      ) : null}
     </Box>
   );
 }

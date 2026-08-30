@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   FormControlLabel,
   MenuItem,
@@ -21,14 +22,23 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import {
   OPERATIONAL_STATE_LABELS,
   SERVICEABILITY_LABELS,
   type AircraftOperationalState,
   type AircraftServiceability,
+  type MutationPreview,
+  type RuleCode,
 } from "@airsoko/contracts";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
+import { useAuth } from "../auth/AuthContext.tsx";
 import { AircraftDrawer, type FleetAircraft } from "../components/AircraftDrawer.tsx";
+import {
+  AircraftFormDialog,
+  type AircraftDraftPayload,
+} from "../components/AircraftFormDialog.tsx";
+import { MutationConfirmDialog } from "../components/MutationConfirmDialog.tsx";
 
 /**
  * The fleet, as it stands right now.
@@ -127,6 +137,7 @@ export function FleetPage() {
   const state = params.get("state") ?? "";
   const maintenanceDue = params.get("maintenanceDue") === "1";
   const [selected, setSelected] = useState<string | null>(null);
+  const { can } = useAuth();
 
   function setFilter(key: string, value: string) {
     setParams(
@@ -158,6 +169,69 @@ export function FleetPage() {
   const items = useMemo(() => fleet.data?.items ?? [], [fleet.data]);
   const allTypes = useMemo(() => fleet.data?.types ?? [], [fleet.data]);
 
+  // --- Registering an airframe ---------------------------------------------
+  // The same preview -> acknowledge -> apply flow as every other write. The
+  // form stays mounted behind the confirmation so a refused registration can
+  // be corrected rather than retyped.
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<AircraftDraftPayload | null>(null);
+  const [preview, setPreview] = useState<MutationPreview | null>(null);
+  const [blocked, setBlocked] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
+
+  async function reviewDraft(payload: AircraftDraftPayload) {
+    setDraft(payload);
+    setPreview(null);
+    setBlocked(null);
+    setPreviewing(true);
+    try {
+      setPreview(
+        await apiRequest<MutationPreview>("/api/aircraft", {
+          method: "POST",
+          body: { ...payload, mutation: { preview: true } },
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ApiRequestError) {
+        setPreview(error.preview);
+        setBlocked(error.message);
+      } else {
+        setBlocked("Could not reach the operations API.");
+      }
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  const register = useMutation({
+    mutationFn: (options: { acknowledgedWarnings: RuleCode[]; reason?: string }) =>
+      apiRequest<{ aircraft: { registration: string; seatCapacity: number } }>(
+        "/api/aircraft",
+        {
+          method: "POST",
+          body: { ...draft, mutation: { preview: false, ...options } },
+        },
+      ),
+    onSuccess: (result) => {
+      setAdded(
+        `${result.aircraft.registration} is on the register with ${result.aircraft.seatCapacity} seats.`,
+      );
+      setDraft(null);
+      setPreview(null);
+      setAdding(false);
+      void fleet.refetch();
+    },
+    onError: (error) => {
+      setBlocked(
+        error instanceof ApiRequestError
+          ? error.message
+          : "The aircraft could not be registered.",
+      );
+      if (error instanceof ApiRequestError && error.preview) setPreview(error.preview);
+    },
+  });
+
   const needingAttention = items.filter(
     (item) =>
       item.serviceability !== "in_service" ||
@@ -179,10 +253,31 @@ export function FleetPage() {
             the flights, so they cannot drift.
           </Typography>
         </Box>
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-          {fleet.isFetching ? "Refreshing…" : `${items.length} airframes`}
-        </Typography>
+        <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            {fleet.isFetching ? "Refreshing…" : `${items.length} airframes`}
+          </Typography>
+          {can("aircraft:write") ? (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
+              Register aircraft
+            </Button>
+          ) : (
+            <Tooltip title="Your role does not include aircraft:write.">
+              <span>
+                <Button variant="contained" startIcon={<AddIcon />} disabled>
+                  Register aircraft
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+        </Stack>
       </Stack>
+
+      {added ? (
+        <Alert severity="success" onClose={() => setAdded(null)} sx={{ mb: 2 }}>
+          {added}
+        </Alert>
+      ) : null}
 
       {needingAttention.length > 0 ? (
         <Alert
@@ -414,6 +509,43 @@ export function FleetPage() {
         onClose={() => setSelected(null)}
         onChanged={() => void fleet.refetch()}
       />
+
+      {adding ? (
+        <AircraftFormDialog
+          open
+          submitting={previewing || register.isPending}
+          onCancel={() => {
+            setAdding(false);
+            setDraft(null);
+            setPreview(null);
+            setBlocked(null);
+          }}
+          onSubmit={(payload) => void reviewDraft(payload)}
+        />
+      ) : null}
+
+      {draft ? (
+        <MutationConfirmDialog
+          open
+          title={`Register ${draft.registration}?`}
+          intentDescription={`${draft.registration} joins the fleet with ${draft.cabins.reduce(
+            (total, cabin) =>
+              total +
+              (cabin.lastRow - cabin.firstRow + 1) * cabin.layout.replace(/-/g, "").length,
+            0,
+          )} seats across ${draft.cabins.length} cabin${draft.cabins.length === 1 ? "" : "s"}, in service from the moment it is saved.`}
+          preview={preview}
+          loading={previewing || register.isPending}
+          blockedMessage={blocked}
+          confirmLabel="Register"
+          onCancel={() => {
+            setDraft(null);
+            setPreview(null);
+            setBlocked(null);
+          }}
+          onConfirm={(options) => register.mutate(options)}
+        />
+      ) : null}
     </Box>
   );
 }

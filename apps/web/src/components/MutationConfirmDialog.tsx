@@ -191,7 +191,14 @@ export function MutationConfirmDialog({
                 <ListItem key={`${item.kind}-${index}`} disableGutters sx={{ py: 0.25 }}>
                   <ListItemText
                     primary={item.summary}
-                    secondary={item.count === undefined ? undefined : `${item.count} affected`}
+                    // The count is structured data worth carrying, but repeating
+                    // it under a summary that already states it reads as two
+                    // different numbers at a glance.
+                    secondary={
+                      item.count === undefined || item.summary.includes(String(item.count))
+                        ? undefined
+                        : `${item.count} affected`
+                    }
                     slotProps={{
                       primary: { variant: "body2" },
                       secondary: { variant: "caption" },
