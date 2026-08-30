@@ -375,3 +375,94 @@ distinguishable.
 
 The resolved result carries `overridden` — every assignment that applied and lost. An
 operator asking why a cabin shows no Wi-Fi reads the answer instead of inferring it.
+
+---
+
+## 22. Registering an aircraft asks for the layout, never the seat count
+
+**Decided.** The registration form has no capacity field. Each cabin is described
+by its rows and its seat letters, and the total is computed and shown live as they
+are typed.
+
+Asking for a total would be asking the operator to state something the form can
+already work out, and to be wrong about it — a form that can disagree with itself
+before the record reaches the database. This is decision 19 applied one level
+earlier: capacity is summed from the layout everywhere, including at the moment
+the layout is first written.
+
+The layout is one field per cabin, written the way an airline writes it:
+`ABC-DEF`, `AC-DF`, `A-CD-F`, with the dashes marking aisles. That single input
+gives three facts — which letters exist, which seats are windows (first and last),
+and which are on an aisle (either side of a dash). Only the letters are stored on
+the cabin row; aisle positions land on the individual seats, which is the only
+place anything reads them.
+
+Cabins and their seats are written in the same transaction as the airframe. A tail
+that existed for even a moment with no cabins would be an aircraft with no seats.
+
+---
+
+## 23. Retiring an aircraft, and why its marks come back
+
+**Decided.** `POST /api/aircraft/:id/retire` sets `active = false`. The `active`
+column has existed since the schema was written and `loadFleet` has always
+respected it; nothing set it until registration existed.
+
+It is not the same as `out_of_service`. That is still the airline's aircraft, on
+the books, temporarily unusable. Retired means it has left the fleet — sold,
+returned to the lessor, scrapped — and it stops appearing anywhere. Blocking
+rather than warning where flights are concerned: withdrawing a tail into
+maintenance leaves sectors an operator can then solve, but retiring removes the
+airframe from the very pickers they would solve them with.
+
+The record is kept rather than deleted. Flights it flew still reference it, and an
+audit trail pointing at a row that no longer exists is not a trail.
+
+**Migration 0004 makes the registration index partial** — unique only `WHERE
+active`. Registrations are recycled: an airframe leaves the fleet and its marks go
+back to the register, sometimes onto a different aircraft within months. A unique
+index across all rows made a retired tail's number permanently unusable, which is
+not how the register works.
+
+Identity is unaffected, and that is what makes this safe: audit entries and every
+foreign key reference the aircraft's id. The registration is a label on the row,
+not the row's name. Reusing marks raises a warning naming the retired airframe,
+because a search on the registration will return both.
+
+Serial numbers work the other way and are checked across retired airframes too.
+Manufacturer serials are never reused.
+
+---
+
+## 24. Amenity assignments are editable at aircraft and cabin scope only
+
+**Decided.** Assignments can be created and removed at aircraft and cabin level
+now. Fare-product scope waits for Phase 6, when fare products exist to attach to,
+and flight scope for Phase 3.
+
+An earlier note in `docs/STATE.md` deferred all four to Phase 6 on the grounds
+that assignments "need fare products". That was true of one scope out of four and
+wrong about the rest — the correction is recorded here rather than quietly fixed,
+because the reasoning is the part worth not repeating.
+
+Both remaining scopes are modelled and both resolve correctly today. What is
+missing is the thing to point at, and the UI says so instead of offering controls
+that would open empty lists.
+
+Two warnings carry the interesting half of the model, and both exist because the
+tie-break in decision 21 is not symmetric:
+
+- **Adding a withdrawal beside a grant** wins, silently, and changes what a
+  passenger is told. Stated before it happens, with the cabins counted.
+- **Adding a grant beside a withdrawal** does _not_ win, and changes nothing. The
+  warning says so and points at removing the withdrawal instead. This is the one
+  an operator is most likely to get wrong.
+
+A third warning fires when a withdrawal has nothing to withhold. The effect is
+computed by resolving before and after rather than described again in prose —
+cheaper to be exact than to keep two descriptions of one rule in step.
+
+One subtlety the tests caught: "absent" and "withheld" are different facts, which
+`resolveAmenities` keeps apart deliberately, but they are the same _offer_. The
+change count compares offers, so adding a withdrawal over silence correctly counts
+as changing nothing.

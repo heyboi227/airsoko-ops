@@ -17,35 +17,47 @@ both the API and the browser.
 | Serviceability split from operational state                  | Done, migration `0003`     |
 | `deriveFleetState` — position, state, rotation, from flights | Done, pure                 |
 | `evaluateAircraftAssignment` — the Phase 3 assignment gate   | Done, 20 unit tests        |
+| Registering an airframe with its cabins                      | Done, 20 unit tests        |
+| Retiring an airframe                                         | Done, migration `0004`     |
 | Maintenance standing across calendar / hours / cycles        | Done, 96 events seeded     |
 | Amenity resolution across four scopes                        | Done, 11 unit tests        |
+| Amenity assignment at aircraft and cabin scope               | Done, 11 unit tests        |
 | Fleet list with derived state and URL-backed filters         | Done                       |
 | Aircraft profile drawer, incl. serviceability change         | Done, through the pipeline |
 | Amenities page with the per-cabin resolution matrix          | Done                       |
 
 ### Verified
 
-- 66 domain unit tests and 35 acceptance tests pass; `npm run verify` exits 0.
+- 112 domain unit tests and 58 acceptance tests pass; `npm run verify` exits 0.
 - Withdrawing an airframe with onward sectors names them by flight number before it
   happens, refuses to apply until the warning is acknowledged by its code, and raises a
   critical alert per stranded flight when it does.
 - Every aircraft's reported capacity equals the sum of its cabins, across the whole
-  fleet. No column stores the total.
+  fleet. No column stores the total, and the registration form has no field for one —
+  a registered airframe's 216 seats are 216 seat rows, written in the same transaction.
 - No aircraft can report a state that contradicts its serviceability, and no airborne
   aircraft claims to be at an airport.
-- Amenity resolution is order-independent: the same assignments in any order produce the
-  same answer, and the assignments that lost stay visible on the result.
+- A registered airframe round-trips: created, listed with the right capacity, retired,
+  gone from the fleet, and its marks available again.
+- Amenity resolution is order-independent, and adding a grant beside an existing
+  withdrawal is warned as changing nothing rather than silently doing nothing.
 - The dashboard, the fleet page and the aircraft profile all read `loadFleet`. There is
   one implementation of "where is this aircraft and what is it doing".
 
 ### Known simplifications
 
-- **Amenity assignments are read-only.** The resolution is live and the model supports
-  all four scopes, but creating and editing assignments needs fare products, which
-  arrive in Phase 6. Nothing in the UI offers an edit control that does not work.
-- **No seat map.** The brief calls it optional. The cabin layout is shown as a
-  seats-per-cabin breakdown; a seat map only becomes meaningful once bookings can
-  occupy seats, in Phase 6.
+- **Aircraft types are read-only.** Registering a tail of an existing type is the
+  common act and is built; adding a _type_ is a much heavier form and a rarer
+  event. The five seeded types cover the network as it stands.
+- **Aircraft records cannot be edited after registration.** They can be
+  registered and retired. An edit form is the same rule set with `editingId`
+  set — `evaluateRegisterAircraft` already takes it — but nothing calls it yet.
+- **Fare-product and flight amenity scope are read-only.** Both are modelled and
+  both resolve correctly; what is missing is the thing to attach them to. Fare
+  products arrive in Phase 6, flights in Phase 3.
+- **No seat map.** The brief calls it optional. Seats exist as rows from the
+  moment an aircraft is registered, so the map has data waiting for it; it only
+  becomes meaningful once bookings can occupy seats, in Phase 6.
 - **Maintenance is read-only.** Events are seeded and shown; scheduling a check is not
   a mutation the product offers yet. `aircraft:maintenance` exists as a permission and
   is unused.

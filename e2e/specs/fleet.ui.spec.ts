@@ -193,3 +193,142 @@ test.describe("Amenities", () => {
     await expect(wifi.getByText("aircraft")).toHaveCount(2);
   });
 });
+
+test.describe("Registering an aircraft", () => {
+  test("the form derives capacity and never asks for it", async ({ page }) => {
+    await openFleetAs(page, ACCOUNTS.fleetManager);
+    await page.getByRole("button", { name: "Register aircraft" }).click();
+
+    const form = page.getByRole("dialog", { name: "Register an aircraft" });
+    await expect(form).toBeVisible();
+
+    // The claim the whole phase rests on, made visible: there is no seat-count
+    // box to disagree with the layout.
+    await expect(form.getByLabel(/seat count|capacity|total seats/i)).toHaveCount(0);
+
+    await expect(form.getByText("0 seats in total")).toBeVisible();
+
+    // One economy cabin is offered by default; giving it a last row is enough
+    // for the running total to appear.
+    await form.getByLabel("Last row").fill("25");
+    await expect(form.getByText("150 seats in total")).toBeVisible();
+
+    // 25 rows of ABC-DEF is 150. Widening the layout changes the total with no
+    // other field touched.
+    await form.getByLabel("Layout").fill("ABC-DEFG");
+    await expect(form.getByText("175 seats in total")).toBeVisible();
+
+    await form.getByRole("button", { name: "Cancel" }).click();
+    await expect(form).toBeHidden();
+  });
+
+  test("a registration already in use is refused before anything is written", async ({
+    page,
+  }) => {
+    await openFleetAs(page, ACCOUNTS.fleetManager);
+    await page.getByRole("button", { name: "Register aircraft" }).click();
+
+    const form = page.getByRole("dialog", { name: "Register an aircraft" });
+    await form.getByLabel("Registration").fill("YU-APE");
+    await form.getByLabel("Serial number").fill("DUPLICATE-1");
+    await form.getByLabel(/^Type/).click();
+    await page
+      .getByRole("option")
+      .filter({ hasText: /^A320 / })
+      .click();
+    await form.getByLabel("Delivered on").fill("2019-05-10");
+    await form.getByLabel("Last row").fill("25");
+    await form.getByRole("button", { name: "Review and register" }).click();
+
+    const confirm = page.getByRole("dialog", { name: /^Register YU-APE/ });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText("YU-APE is already registered")).toBeVisible();
+    await expect(confirm.getByRole("button", { name: "Register" })).toBeDisabled();
+
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+
+    // The form is still there with what was typed, so a refusal is a
+    // correction rather than a retype.
+    await expect(form.getByLabel("Registration")).toHaveValue("YU-APE");
+    await form.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("a role without aircraft:write is not offered the button", async ({ page }) => {
+    await openFleetAs(page, ACCOUNTS.bookingAdmin);
+    await expect(page.getByRole("button", { name: "Register aircraft" })).toBeDisabled();
+  });
+});
+
+test.describe("Assigning an amenity", () => {
+  async function openAmenitiesAs(page: Page, email: string) {
+    await signInAs(page, email);
+    await page.getByRole("link", { name: "Amenities" }).click();
+    await expect(page.getByRole("heading", { name: "Amenities" })).toBeVisible();
+    await page.getByLabel("Aircraft").click();
+    await page.getByRole("option", { name: /YU-ANB/ }).click();
+    await expect(page.getByRole("table", { name: "Cabin amenity resolution" })).toBeVisible();
+  }
+
+  test("the rows that produced the resolution are listed under it", async ({ page }) => {
+    await openAmenitiesAs(page, ACCOUNTS.commercialManager);
+
+    const panel = page.getByRole("table", { name: "Assignments reaching this airframe" });
+    await expect(panel).toBeVisible();
+
+    // The seeded withdrawal is here as a row that can be removed, not just as
+    // a struck-through chip somewhere.
+    const wifi = panel.getByRole("row").filter({ hasText: "Wi-Fi" });
+    await expect(wifi.first()).toBeVisible();
+    await expect(panel.getByText("Wi-Fi antenna unserviceable, parts on order.")).toBeVisible();
+  });
+
+  test("removing a withdrawal says what starts being offered again", async ({ page }) => {
+    await openAmenitiesAs(page, ACCOUNTS.commercialManager);
+
+    const panel = page.getByRole("table", { name: "Assignments reaching this airframe" });
+    const withdrawal = panel
+      .getByRole("row")
+      .filter({ hasText: "Wi-Fi antenna unserviceable" })
+      .first();
+    await withdrawal.getByRole("button", { name: "Remove" }).click();
+
+    const confirm = page.getByRole("dialog", { name: /Remove the withdrawal of Wi-Fi/ });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText(/becomes offered again/).first()).toBeVisible();
+
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirm).toBeHidden();
+  });
+
+  test("a withdrawal warns that it will beat the grant already there", async ({ page }) => {
+    await openAmenitiesAs(page, ACCOUNTS.commercialManager);
+
+    await page.getByRole("button", { name: "Assign" }).click();
+    const form = page.getByRole("dialog", { name: "Assign an amenity" });
+
+    await form.getByRole("combobox", { name: "Amenity" }).click();
+    await page.getByRole("option", { name: /Streaming to device/ }).click();
+    await form.getByLabel("Withhold it").check();
+    await form.getByRole("button", { name: "Review" }).click();
+
+    const confirm = page.getByRole("dialog", { name: /Withhold Streaming to device/ });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText(/withdrawal wins/)).toBeVisible();
+    await expect(confirm.getByRole("button", { name: "Withhold it" })).toBeDisabled();
+
+    await confirm.getByRole("checkbox").first().check();
+    await expect(confirm.getByRole("button", { name: "Withhold it" })).toBeEnabled();
+
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("a role without commercial:write reads the matrix but cannot change it", async ({
+    page,
+  }) => {
+    await openAmenitiesAs(page, ACCOUNTS.fleetManager);
+
+    await expect(page.getByRole("table", { name: "Cabin amenity resolution" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Assign" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  });
+});
