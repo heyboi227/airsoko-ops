@@ -22,6 +22,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { BarChart } from "@mui/x-charts/BarChart";
 import type { Dashboard } from "@airsoko/contracts";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
+import { grouped } from "../format.ts";
 
 /**
  * The operational overview for today.
@@ -457,9 +458,7 @@ export function DashboardPage() {
                             "—"
                           )}
                         </TableCell>
-                        <TableCell align="right">
-                          {route.distanceNm.toLocaleString()} nm
-                        </TableCell>
+                        <TableCell align="right">{grouped(route.distanceNm)} nm</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

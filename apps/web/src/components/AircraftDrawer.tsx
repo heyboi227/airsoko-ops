@@ -33,6 +33,7 @@ import {
   type RuleCode,
 } from "@airsoko/contracts";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
+import { grouped } from "../format.ts";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { MutationConfirmDialog } from "./MutationConfirmDialog.tsx";
 
@@ -438,10 +439,10 @@ export function AircraftDrawer({
                 <Field label="Delivered" value={item.deliveredOn} />
                 <Field label="Base" value={item.baseIata ?? "—"} />
                 <Field label="Engines" value={item.type.engineModel} />
-                <Field label="Range" value={`${item.type.rangeNm.toLocaleString()} nm`} />
+                <Field label="Range" value={`${grouped(item.type.rangeNm)} nm`} />
                 <Field label="Cruise" value={`${item.type.cruiseSpeedKts} kt`} />
-                <Field label="Total hours" value={item.totalHours.toLocaleString()} />
-                <Field label="Total cycles" value={item.totalCycles.toLocaleString()} />
+                <Field label="Total hours" value={grouped(item.totalHours)} />
+                <Field label="Total cycles" value={grouped(item.totalCycles)} />
                 <Field label="Sectors today" value={item.sectorsToday} />
               </Box>
             </Paper>
@@ -472,7 +473,7 @@ export function AircraftDrawer({
                   value={
                     item.maintenance.hoursRemaining === null
                       ? "—"
-                      : `${item.maintenance.hoursRemaining.toLocaleString()} h`
+                      : `${grouped(item.maintenance.hoursRemaining)} h`
                   }
                 />
                 <Field
@@ -480,7 +481,7 @@ export function AircraftDrawer({
                   value={
                     item.maintenance.cyclesRemaining === null
                       ? "—"
-                      : item.maintenance.cyclesRemaining.toLocaleString()
+                      : grouped(item.maintenance.cyclesRemaining)
                   }
                 />
               </Box>

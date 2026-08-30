@@ -38,6 +38,7 @@ import type {
 } from "@airsoko/contracts";
 import { distanceNm } from "@airsoko/domain";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
+import { grouped } from "../format.ts";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { MutationConfirmDialog } from "../components/MutationConfirmDialog.tsx";
 import {
@@ -429,12 +430,14 @@ export function AirportsPage() {
                     <TableCell align="right">{airport.latitude.toFixed(4)}</TableCell>
                     <TableCell align="right">{airport.longitude.toFixed(4)}</TableCell>
                     <TableCell align="right">
-                      {Math.round(
-                        distanceNm(HUB_DISTANCE_ORIGIN, {
-                          latitude: airport.latitude,
-                          longitude: airport.longitude,
-                        }),
-                      ).toLocaleString()}{" "}
+                      {grouped(
+                        Math.round(
+                          distanceNm(HUB_DISTANCE_ORIGIN, {
+                            latitude: airport.latitude,
+                            longitude: airport.longitude,
+                          }),
+                        ),
+                      )}{" "}
                       nm
                     </TableCell>
                     <TableCell>
