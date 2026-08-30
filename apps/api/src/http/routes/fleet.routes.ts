@@ -1,19 +1,32 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { and, eq, gte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   aircraftServiceabilitySchema,
+  cabinClassSchema,
   mutationOptionsSchema,
   SERVICEABILITY_LABELS,
 } from "@airsoko/contracts";
-import { evaluateWithdrawAircraft, resolveAmenities, resourceRef } from "@airsoko/domain";
+import {
+  cabinSeatCount,
+  draftSeatCapacity,
+  evaluateRegisterAircraft,
+  evaluateRetireAircraft,
+  evaluateWithdrawAircraft,
+  resolveAmenities,
+  resourceRef,
+} from "@airsoko/domain";
 import { db, type Executor } from "../../db/client.ts";
 import {
   aircraft,
+  aircraftCabins,
+  aircraftTypes,
   airports,
   amenities,
   amenityAssignments,
   flightInstances,
+  seats,
 } from "../../db/schema/index.ts";
 import { loadFleet, loadMaintenanceHistory } from "../../fleet/state.ts";
 import { actorOf, requireAuth, requirePermission } from "../auth.ts";
@@ -317,3 +330,340 @@ async function fittedAmenities(aircraftId: string) {
     category: named.get(entry.amenityCode)?.category ?? null,
   }));
 }
+
+// --- Registering an airframe ------------------------------------------------
+
+/**
+ * A cabin, as the operator describes it.
+ *
+ * `seatCount` is deliberately absent. It is the product of the rows and the
+ * letters, and accepting it as input would let a form disagree with itself
+ * before the record even reached the database.
+ *
+ * The layout is written the way an airline writes it -- "ABC-DEF", "AC-DF",
+ * "A-CD-F" -- with the dashes marking aisles. One field then gives three
+ * facts: which letters exist, which seats are windows, and which are on an
+ * aisle. Only the letters are stored on the cabin; the aisle positions land on
+ * the individual seats, which is the only place anything reads them.
+ */
+const cabinDraftSchema = z.object({
+  cabinClass: cabinClassSchema,
+  firstRow: z.number().int().min(1).max(99),
+  lastRow: z.number().int().min(1).max(99),
+  layout: z
+    .string()
+    .trim()
+    .min(1)
+    .max(12)
+    .regex(
+      /^[A-Za-z]+(-[A-Za-z]+)*$/,
+      'Write the layout as seat letters with dashes for aisles, e.g. "ABC-DEF".',
+    ),
+  pitchInches: z.number().int().min(26).max(90),
+});
+
+const createAircraftSchema = z.object({
+  registration: z
+    .string()
+    .trim()
+    .min(3)
+    .max(10)
+    .regex(/^[A-Za-z0-9-]+$/, "A registration is letters, digits and hyphens."),
+  serialNumber: z.string().trim().min(1).max(20),
+  name: z.string().trim().max(60).optional(),
+  aircraftTypeId: z.uuid(),
+  deliveredOn: z.iso.date(),
+  baseAirportId: z.uuid().optional(),
+  totalHours: z.number().int().min(0).max(200_000).optional(),
+  totalCycles: z.number().int().min(0).max(200_000).optional(),
+  notes: z.string().trim().max(500).optional(),
+  cabins: z.array(cabinDraftSchema).min(1).max(4),
+});
+
+interface ParsedLayout {
+  letters: string;
+  /** Letters with an aisle on at least one side. */
+  aisleLetters: string;
+}
+
+function parseLayout(layout: string): ParsedLayout {
+  const groups = layout.trim().toUpperCase().split("-");
+  const aisle = new Set<string>();
+
+  for (let index = 0; index < groups.length - 1; index += 1) {
+    const left = groups[index];
+    const right = groups[index + 1];
+    if (left) aisle.add(left[left.length - 1] as string);
+    if (right) aisle.add(right[0] as string);
+  }
+
+  return { letters: groups.join(""), aisleLetters: [...aisle].join("") };
+}
+
+fleetRouter.post("/", requireAuth, requirePermission("aircraft:write"), async (req, res) => {
+  const { mutation: rawOptions, ...body } = req.body ?? {};
+  const input = createAircraftSchema.parse(body);
+  const options = mutationOptionsSchema.parse(rawOptions ?? {});
+  const actor = actorOf(req);
+  const now = new Date().toISOString();
+
+  const [type] = await db
+    .select({
+      id: aircraftTypes.id,
+      icaoTypeCode: aircraftTypes.icaoTypeCode,
+      manufacturer: aircraftTypes.manufacturer,
+      model: aircraftTypes.model,
+    })
+    .from(aircraftTypes)
+    .where(eq(aircraftTypes.id, input.aircraftTypeId))
+    .limit(1);
+
+  if (!type) throw notFound(`Aircraft type ${input.aircraftTypeId}`);
+
+  const registration = input.registration.trim().toUpperCase();
+  const layouts = input.cabins.map((cabin) => parseLayout(cabin.layout));
+  const draftCabins = input.cabins.map((cabin, index) => ({
+    cabinClass: cabin.cabinClass,
+    firstRow: cabin.firstRow,
+    lastRow: cabin.lastRow,
+    seatLetters: layouts[index]?.letters ?? "",
+    pitchInches: cabin.pitchInches,
+  }));
+
+  const id = randomUUID();
+
+  const outcome = await runIntent({
+    intent: "aircraft.create",
+    actor,
+    options,
+    now,
+    evaluate: async (tx) =>
+      evaluateRegisterAircraft(
+        {
+          registration,
+          serialNumber: input.serialNumber,
+          deliveredOn: input.deliveredOn,
+          aircraftTypeId: input.aircraftTypeId,
+          cabins: draftCabins,
+        },
+        { existing: await loadAirframes(tx), today: now.slice(0, 10) },
+      ),
+    apply: async (tx) => {
+      await tx.insert(aircraft).values({
+        id,
+        registration,
+        aircraftTypeId: input.aircraftTypeId,
+        serialNumber: input.serialNumber.trim(),
+        name: input.name?.trim() || null,
+        deliveredOn: input.deliveredOn,
+        serviceability: "in_service",
+        baseAirportId: input.baseAirportId ?? null,
+        totalHours: input.totalHours ?? 0,
+        totalCycles: input.totalCycles ?? 0,
+        notes: input.notes?.trim() || null,
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Cabins and their seats in the same transaction as the airframe. A tail
+      // that existed for even a moment with no cabins would be an aircraft
+      // with no seats, and capacity is summed from exactly these rows.
+      const seatRows: (typeof seats.$inferInsert)[] = [];
+
+      for (const [index, cabin] of draftCabins.entries()) {
+        const cabinId = randomUUID();
+        const layout = layouts[index];
+        const letters = [...(layout?.letters ?? "")];
+
+        await tx.insert(aircraftCabins).values({
+          id: cabinId,
+          aircraftId: id,
+          cabinClass: cabin.cabinClass,
+          seatCount: cabinSeatCount(cabin),
+          firstRow: cabin.firstRow,
+          lastRow: cabin.lastRow,
+          seatLetters: cabin.seatLetters,
+          pitchInches: cabin.pitchInches,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        for (let row = cabin.firstRow; row <= cabin.lastRow; row += 1) {
+          for (const letter of letters) {
+            seatRows.push({
+              id: randomUUID(),
+              aircraftId: id,
+              cabinId,
+              cabinClass: cabin.cabinClass,
+              row,
+              letter,
+              label: `${row}${letter}`,
+              isWindow: letter === letters[0] || letter === letters[letters.length - 1],
+              isAisle: (layout?.aisleLetters ?? "").includes(letter),
+              // Exit rows are not known at registration; the front row of a
+              // cabin always has the legroom, and that much is structural.
+              isExitRow: false,
+              isExtraLegroom: row === cabin.firstRow,
+              isServiceable: true,
+            });
+          }
+        }
+      }
+
+      for (const batch of chunk(seatRows, 500)) {
+        await tx.insert(seats).values(batch);
+      }
+
+      const capacity = draftSeatCapacity(draftCabins);
+
+      return {
+        value: { id, registration, seatCapacity: capacity, seats: seatRows.length },
+        audit: {
+          action: "aircraft.create",
+          resource: resourceRef("aircraft", id, registration),
+          newValue: {
+            registration,
+            serialNumber: input.serialNumber.trim(),
+            type: type.icaoTypeCode,
+            deliveredOn: input.deliveredOn,
+            // The layout, not the total: the total is derivable from it, and
+            // recording both would put a stale copy in the audit trail too.
+            cabins: draftCabins,
+          },
+        },
+      };
+    },
+  });
+
+  if (outcome.status === "preview") {
+    res.status(200).json(outcome.preview);
+    return;
+  }
+  res.status(201).json({ aircraft: outcome.value, preview: outcome.preview });
+});
+
+/** Aircraft types, so the registration form can offer the ones on file. */
+fleetRouter.get(
+  "/types/list",
+  requireAuth,
+  requirePermission("aircraft:read"),
+  async (_req, res) => {
+    const items = await db
+      .select({
+        id: aircraftTypes.id,
+        icaoTypeCode: aircraftTypes.icaoTypeCode,
+        manufacturer: aircraftTypes.manufacturer,
+        model: aircraftTypes.model,
+        variant: aircraftTypes.variant,
+        bodyType: aircraftTypes.bodyType,
+        rangeNm: aircraftTypes.rangeNm,
+      })
+      .from(aircraftTypes)
+      .orderBy(aircraftTypes.manufacturer, aircraftTypes.model);
+
+    res.json({ items, total: items.length });
+  },
+);
+
+/** Every airframe, in the shape the registration rules read. */
+async function loadAirframes(executor: Executor = db) {
+  const rows = await executor
+    .select({
+      id: aircraft.id,
+      registration: aircraft.registration,
+      serialNumber: aircraft.serialNumber,
+      aircraftTypeId: aircraft.aircraftTypeId,
+      seatCapacity: sql<number>`coalesce(sum(${aircraftCabins.seatCount}), 0)::int`,
+      active: aircraft.active,
+    })
+    .from(aircraft)
+    .leftJoin(aircraftCabins, eq(aircraftCabins.aircraftId, aircraft.id))
+    .groupBy(aircraft.id);
+
+  return rows.map((row) => ({ ...row, retired: !row.active }));
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+}
+
+/**
+ * Taking an airframe off the register.
+ *
+ * Distinct from `out_of_service`, which is still the airline's aircraft and
+ * still on the books. Retiring means it has left the fleet -- sold, returned to
+ * the lessor, scrapped -- and it stops appearing anywhere. The `active` column
+ * has existed since the schema was written and `loadFleet` has always respected
+ * it; nothing set it until now.
+ *
+ * It exists mainly because registering an airframe without it is a trap: a
+ * mistyped registration would otherwise be permanent.
+ *
+ * The record is kept rather than deleted. Flights it flew still reference it,
+ * and an audit trail pointing at a row that no longer exists is not a trail.
+ */
+fleetRouter.post(
+  "/:id/retire",
+  requireAuth,
+  requirePermission("aircraft:write"),
+  async (req, res) => {
+    const id = pathParam(req, "id");
+    const options = mutationOptionsSchema.parse(req.body?.mutation ?? req.body ?? {});
+    const actor = actorOf(req);
+    const now = new Date().toISOString();
+
+    const [current] = await db
+      .select({
+        id: aircraft.id,
+        registration: aircraft.registration,
+        serviceability: aircraft.serviceability,
+        active: aircraft.active,
+      })
+      .from(aircraft)
+      .where(eq(aircraft.id, id))
+      .limit(1);
+
+    if (!current) throw notFound(`Aircraft ${id}`);
+    if (!current.active) {
+      throw new ApiProblem("CONFLICT", `${current.registration} has already been retired.`);
+    }
+
+    const outcome = await runIntent({
+      intent: "aircraft.retire",
+      actor,
+      options,
+      now,
+      evaluate: async (tx) => {
+        const upcoming = await upcomingSectors(id, now, tx);
+        return evaluateRetireAircraft(current, upcoming);
+      },
+      apply: async (tx) => {
+        await tx
+          .update(aircraft)
+          .set({ active: false, serviceability: "out_of_service", updatedAt: now })
+          .where(eq(aircraft.id, id));
+
+        return {
+          value: { id, registration: current.registration },
+          audit: {
+            action: "aircraft.retire",
+            resource: resourceRef("aircraft", id, current.registration),
+            previousValue: { active: true, serviceability: current.serviceability },
+            newValue: { active: false, serviceability: "out_of_service" },
+          },
+        };
+      },
+    });
+
+    if (outcome.status === "preview") {
+      res.status(200).json(outcome.preview);
+      return;
+    }
+    res.json({ aircraft: outcome.value, preview: outcome.preview });
+  },
+);

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -98,7 +99,11 @@ export const aircraft = pgTable(
     ...lifecycle,
   },
   (table) => [
-    uniqueIndex("aircraft_registration_key").on(table.registration),
+    // Unique among aircraft the airline still has. Registrations are recycled
+    // when a tail leaves the fleet -- see migration 0004.
+    uniqueIndex("aircraft_registration_active_key")
+      .on(table.registration)
+      .where(sql`${table.active}`),
     index("aircraft_type_idx").on(table.aircraftTypeId),
     index("aircraft_serviceability_idx").on(table.serviceability),
     index("aircraft_base_idx").on(table.baseAirportId),
