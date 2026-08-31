@@ -14,8 +14,7 @@ updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
     open-pull-requests-limit: 5
     versioning-strategy: increase
     groups:
@@ -47,4 +46,4 @@ updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: monthly
+      interval: daily
