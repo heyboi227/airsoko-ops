@@ -40,6 +40,13 @@ export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   { iataCode: "SOF" },
   { iataCode: "OTP" },
   { iataCode: "BUD" },
+  { iataCode: "OHD" },
+  { iataCode: "TGD" },
+  { iataCode: "INI", isFocusCity: true },
+  { iataCode: "KVO", isFocusCity: true },
+  { iataCode: "OMO" },
+  { iataCode: "TZL" },
+  { iataCode: "DBV" },
 
   // --- Western and central Europe -----------------------------------------
   { iataCode: "VIE" },
@@ -52,6 +59,15 @@ export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   { iataCode: "LHR" },
   { iataCode: "PRG" },
   { iataCode: "WAW" },
+  { iataCode: "DUS" },
+  { iataCode: "HAM" },
+  { iataCode: "STR" },
+  { iataCode: "LYS" },
+  { iataCode: "DUB" },
+  { iataCode: "MAN" },
+  { iataCode: "EDI" },
+  { iataCode: "LGW" },
+  { iataCode: "ABZ" },
 
   // --- Southern Europe ----------------------------------------------------
   { iataCode: "FCO" },
@@ -59,11 +75,27 @@ export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   { iataCode: "BCN" },
   { iataCode: "MAD" },
   { iataCode: "ATH" },
+  { iataCode: "LIS" },
+  { iataCode: "OPO" },
+  { iataCode: "SVQ" },
+  { iataCode: "TFS" },
+  { iataCode: "VCE" },
 
   // --- Northern Europe ----------------------------------------------------
   { iataCode: "CPH" },
   { iataCode: "ARN" },
   { iataCode: "OSL" },
+
+  // --- East and Caucasus --------------------------------------------------
+  { iataCode: "SVO" },
+  { iataCode: "LED" },
+  { iataCode: "DME" },
+  { iataCode: "TBS" },
+  { iataCode: "GYD" },
+  { iataCode: "EVN" },
+  { iataCode: "IST" },
+  { iataCode: "ESB" },
+  { iataCode: "AYT" },
 
   // --- Long haul ----------------------------------------------------------
   // Chosen partly to exercise the time handling rather than only to look
@@ -71,7 +103,6 @@ export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   // Asia/Shanghai never change, America/Sao_Paulo is southern-hemisphere with
   // DST abolished, and the American stations change on different dates from
   // the European ones.
-  { iataCode: "IST" },
   { iataCode: "DXB" },
   { iataCode: "BOM" },
   { iataCode: "PEK" },
@@ -79,4 +110,17 @@ export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   { iataCode: "ORD" },
   { iataCode: "YYZ" },
   { iataCode: "GRU" },
+  { iataCode: "HND" },
+  { iataCode: "SIN" },
+  { iataCode: "BKK" },
+  { iataCode: "DEL" },
+  { iataCode: "CMN" },
+  { iataCode: "MIA" },
+  { iataCode: "EWR" },
+  { iataCode: "ATL" },
+  { iataCode: "LAX" },
+  { iataCode: "EZE" },
+  { iataCode: "MEX" },
+  { iataCode: "GIG" },
+  { iataCode: "SYD" },
 ];
