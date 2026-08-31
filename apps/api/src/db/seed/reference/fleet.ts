@@ -400,7 +400,7 @@ export const SEED_AIRCRAFT: readonly SeedAircraft[] = [
     serialNumber: "1355",
     name: "Jasenica",
     deliveredOn: "2020-02-06",
-    baseIata: "TIV",
+    baseIata: "INI",
   },
   {
     registration: "YU-ALD",

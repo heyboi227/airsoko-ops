@@ -16,7 +16,7 @@ import { airlines, airports, routes } from "./network.ts";
 import { users } from "./identity.ts";
 
 /**
- * A repeating service: "SK412 flies BEG-VIE at 07:45 local, Monday to Friday,
+ * A repeating service: "SO412 flies BEG-VIE at 07:45 local, Monday to Friday,
  * from March to October."
  *
  * The pattern is not a flight. Dated occurrences are generated from it into

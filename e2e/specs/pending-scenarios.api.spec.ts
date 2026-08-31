@@ -71,7 +71,7 @@ test.describe("Scenario D: crew incompatibility (Phase 5)", () => {
 
 test.describe("Scenario E: live flight selection (Phase 4)", () => {
   test.fixme("searching a flight number selects its marker and its list row", async () => {
-    // UI spec: search "SK412", select the result, assert the map marker has
+    // UI spec: search "SO412", select the result, assert the map marker has
     // aria-selected and the list row is highlighted -- both directions.
   });
 

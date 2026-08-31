@@ -466,3 +466,37 @@ One subtlety the tests caught: "absent" and "withheld" are different facts, whic
 `resolveAmenities` keeps apart deliberately, but they are the same _offer_. The
 change count compares offers, so adding a withdrawal over silence correctly counts
 as changing nothing.
+
+---
+
+## 25. Niš is the second base; Tivat is an ordinary station
+
+**Decided.** The Serbian airports carry the network's own links. `YU-ALC`
+_Jasenica_ is based at INI rather than TIV, the seasonal programme originates
+from Niš instead of the coast, and Tivat keeps only the service flown to it.
+
+What the old arrangement was for is worth keeping. TIV was the single place in
+the seed where an aircraft did not start its day at the hub, which is the case
+`assignRotations` exists to handle: it seeds each tail at its base and will not
+move one that is standing somewhere else — nothing teleports. Deleting the
+coastal base would have left that path in the code with nothing exercising it.
+Moving the base keeps the case and puts it on a Serbian airport, which was the
+point of the change.
+
+INI is marked `isHub` rather than `isFocusCity`, because the flag means what it
+says: a focus city is served heavily _without_ basing aircraft there, and
+Jasenica lives at Niš. Belgrade is still the hub in the sense that matters —
+23 of the 24 tails, and every sector but three. The analytics dashboard orders
+bases by traffic and reports on the first, so BEG remains the operating day it
+narrates, and both airports are Europe/Belgrade in any case. TIV had been
+carrying `isFocusCity` while basing an aircraft, which is the same contradiction
+from the other side; it now carries neither flag.
+
+The three Niš sectors are VIE, ZAG and TIV — 362, 287 and 149 nm against the
+742 nm planning limit for an ATR 72-600 (825 nm published, 90% usable). Tivat
+therefore stays on the network, reached from Niš rather than basing anything.
+
+No BEG–INI sector exists, and that is deliberate: 206 km is a drive. Belgrade–
+Kraljevo is 170 km, which is why KVO stays a station with no scheduled service
+rather than being given a domestic hop to justify its presence. The Serbian
+links point outward, not at each other.

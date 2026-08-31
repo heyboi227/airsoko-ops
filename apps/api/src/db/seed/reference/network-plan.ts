@@ -21,6 +21,13 @@
  * number plus one, which is the convention most European carriers use.
  */
 
+/**
+ * The marketing code every flight number carries. The airline row, the
+ * schedules and the flights all read it from here, so the code appears once
+ * rather than being spelled into each of them.
+ */
+export const MARKETING_CODE = "SO";
+
 export type Equipment = "turboprop" | "narrow_body" | "wide_body";
 
 export interface PlannedRoute {
@@ -62,12 +69,31 @@ export const NETWORK_PLAN: readonly PlannedRoute[] = [
     equipment: "turboprop",
     operatingDays: WEEKDAYS,
   },
-  // The Tivat summer programme: a coastal base that is not the hub, so the
+  // The Niš programme: a second Serbian base that is not the hub, so the
   // rotation builder has to cope with an aircraft that does not start at BEG.
+  // Jasenica lives here and cannot reach Belgrade -- there is no BEG-INI
+  // sector, because 206 km is a drive -- so these three and their returns are
+  // the whole of what it flies.
+  {
+    destination: "VIE",
+    origin: "INI",
+    flightNumber: 114,
+    frequency: 1,
+    equipment: "turboprop",
+    operatingDays: MON_WED_FRI_SUN,
+  },
   {
     destination: "ZAG",
-    origin: "TIV",
-    flightNumber: 112,
+    origin: "INI",
+    flightNumber: 116,
+    frequency: 1,
+    equipment: "turboprop",
+    operatingDays: TUE_THU_SAT,
+  },
+  {
+    destination: "TIV",
+    origin: "INI",
+    flightNumber: 118,
     frequency: 1,
     equipment: "turboprop",
     operatingDays: WEEKEND_PLUS,

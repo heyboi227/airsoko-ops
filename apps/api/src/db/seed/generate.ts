@@ -11,7 +11,12 @@ import {
   zonedTimeToInstant,
 } from "@airsoko/domain";
 import type { FlightPhase, FlightStatus } from "@airsoko/contracts";
-import { NETWORK_PLAN, type Equipment, type PlannedRoute } from "./reference/network-plan.ts";
+import {
+  MARKETING_CODE,
+  NETWORK_PLAN,
+  type Equipment,
+  type PlannedRoute,
+} from "./reference/network-plan.ts";
 import { SEED_AIRCRAFT, SEED_AIRCRAFT_TYPES } from "./reference/fleet.ts";
 import type { SeedStation } from "./reference/index.ts";
 import { seededId } from "../ids.ts";
@@ -290,8 +295,8 @@ export function buildSchedules(
       const returnDeparture = addMinutes(outArrival, turnaround + GROUND_BUFFER_MINUTES);
       const returnArrival = addMinutes(returnDeparture, inbound.blockMinutes);
 
-      const outFlightNumber = `SO${plan.flightNumber + slotIndex * 20}`;
-      const backFlightNumber = `SO${plan.flightNumber + 1 + slotIndex * 20}`;
+      const outFlightNumber = `${MARKETING_CODE}${plan.flightNumber + slotIndex * 20}`;
+      const backFlightNumber = `${MARKETING_CODE}${plan.flightNumber + 1 + slotIndex * 20}`;
 
       schedules.push({
         id: seededId("schedule", `${outFlightNumber}:${outKey}`),

@@ -12,6 +12,7 @@ import {
 } from "../schema/index.ts";
 import { airportId, seededId } from "../ids.ts";
 import { SEED_AIRCRAFT, SEED_AIRCRAFT_TYPES } from "./reference/fleet.ts";
+import { MARKETING_CODE } from "./reference/network-plan.ts";
 import type { SeedStation } from "./reference/index.ts";
 import {
   assignRotations,
@@ -34,8 +35,8 @@ import {
 const SEED_EPOCH = "2026-01-01T00:00:00.000Z";
 
 export const AIR_SOKO = {
-  id: seededId("airline", "SO"),
-  iataCode: "SO",
+  id: seededId("airline", MARKETING_CODE),
+  iataCode: MARKETING_CODE,
   icaoCode: "ASO",
   name: "Air Soko",
   callsignPrefix: "SOKO",
@@ -270,6 +271,27 @@ export async function seedNetwork(
     });
 
   const generatedSchedules = buildSchedules(generatedRoutes, stations, referenceDate);
+
+  // Remove schedules this seed used to generate and no longer does. Same
+  // reasoning as the flights below -- upserting alone leaves a retired route or
+  // a renumbered service behind for ever -- and the same ownership marker, so
+  // only rows this seed created are touched.
+  //
+  // There is no window to scope this by: a schedule is not dated, so the
+  // generated set is the whole of what ought to exist. A stale flight still
+  // pointing at one of these loses the link rather than blocking the delete,
+  // because `schedule_id` is ON DELETE SET NULL.
+  const scheduleIds = generatedSchedules.map((schedule) => schedule.id);
+  if (scheduleIds.length > 0) {
+    await db
+      .delete(recurringSchedules)
+      .where(
+        and(
+          eq(recurringSchedules.createdAt, SEED_EPOCH),
+          notInArray(recurringSchedules.id, scheduleIds),
+        ),
+      );
+  }
 
   await db
     .insert(recurringSchedules)

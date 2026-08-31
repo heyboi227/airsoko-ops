@@ -41,10 +41,10 @@ export const airlineCodeSchema = z
   .string()
   .regex(/^[A-Z0-9]{2}$/, { message: "Airline designators are two characters" });
 
-/** Flight number as printed: designator plus one to four digits, e.g. "SK412". */
+/** Flight number as printed: designator plus one to four digits, e.g. "SO412". */
 export const flightNumberSchema = z
   .string()
-  .regex(/^[A-Z0-9]{2}\d{1,4}$/, { message: "Expected a flight number such as SK412" });
+  .regex(/^[A-Z0-9]{2}\d{1,4}$/, { message: "Expected a flight number such as SO412" });
 
 /** Aircraft registration, e.g. "YU-ASA". */
 export const registrationSchema = z.string().regex(/^[A-Z0-9]{1,2}-[A-Z0-9]{3,5}$/, {

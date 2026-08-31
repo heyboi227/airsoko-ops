@@ -1,8 +1,8 @@
 /**
  * The Air Soko network.
  *
- * A Belgrade-based European carrier: a single hub at BEG, a regional focus
- * city at TIV for the summer coastal programme, a dense short- and medium-haul
+ * A Belgrade-based European carrier: the hub at BEG, a second Serbian base at
+ * INI flying a regional programme of its own, a dense short- and medium-haul
  * European network, and long-haul stations that give the wide-body fleet
  * something to do.
  *
@@ -29,7 +29,7 @@ export interface StationRole {
 export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   // --- Home ---------------------------------------------------------------
   { iataCode: "BEG", isHub: true },
-  { iataCode: "TIV", isFocusCity: true },
+  { iataCode: "INI", isHub: true },
 
   // --- Regional -----------------------------------------------------------
   { iataCode: "SJJ" },
@@ -42,7 +42,7 @@ export const AIR_SOKO_STATIONS: readonly StationRole[] = [
   { iataCode: "BUD" },
   { iataCode: "OHD" },
   { iataCode: "TGD" },
-  { iataCode: "INI", isFocusCity: true },
+  { iataCode: "TIV" },
   { iataCode: "KVO", isFocusCity: true },
   { iataCode: "OMO" },
   { iataCode: "TZL" },
