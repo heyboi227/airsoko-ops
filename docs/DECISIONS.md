@@ -500,3 +500,58 @@ No BEG–INI sector exists, and that is deliberate: 206 km is a drive. Belgrade�
 Kraljevo is 170 km, which is why KVO stays a station with no scheduled service
 rather than being given a domestic hop to justify its presence. The Serbian
 links point outward, not at each other.
+
+---
+
+## 26. The registration form fills its cabins from the fleet, not from a reference
+
+**Decided.** Choosing an aircraft type on the registration form asks
+`GET /api/aircraft/types/:id/configurations` how the airframes of that type already
+on file are fitted, and puts the answer in the cabin fields. A base comes with it.
+
+This is the station autofill (decision 13) applied to the fleet, and the difference
+between the two is the whole point. An airport's coordinates are a fact about the
+world that someone else has already recorded, so they come from a committed
+reference file. A cabin is not a fact about the world: it is the airline's own
+decision, and the fleet on file is the only place it is written down. There is no
+reference to consult, and authoring one would be inventing data — the mistake
+decision 13 exists to name. So the fleet is asked about itself.
+
+It is worth doing because a new tail of an existing type is fitted like its
+siblings almost every time. Typing out the rows, letters and pitch of two or three
+cabins that are already recorded on nine other airframes is not careful work; it is
+the transcription step where a digit goes missing.
+
+**Retired airframes are excluded**, matching `AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET`:
+a layout that has left the fleet is not the one to copy.
+
+**The layout string is reconstructed, not stored.** Decision 22 keeps the seat
+letters on the cabin and the aisle positions on the individual seats, so offering a
+cabin back means putting `ABC-DEF` together again from both. `parseCabinLayout` and
+`formatCabinLayout` are inverses and live in the kernel beside each other, tested
+together. Every configuration the fleet flies round-trips exactly. One shape does
+not: a cabin where every seat touches an aisle — 1-2-1 business, `A-CD-F` — returns
+as `A-C-D-F`, because the stored facts cannot tell the two apart. Same letters, same
+windows, same seats on an aisle; only the notation differs, and it re-parses to what
+it came from. That is stated in the kernel and pinned by a test rather than left to
+be discovered.
+
+**Seat counts in the suggestion are computed from the layout being offered**, not
+read from `aircraft_cabins.seat_count`. Decision 19 one level further out: the
+number shown must be summed from the cabins printed beside it, or the form could
+display a total that disagrees with the layout it is displaying.
+
+**Nothing is imposed, and a hand edit ends the arrangement.** The consent model is
+the station form's, unchanged: an untouched field is a suggestion and a later lookup
+may replace it; a field the operator has typed in is theirs and nothing overwrites
+it. Editing any cabin drops the fleet claim, and correcting the type afterwards does
+not take the edit back — the offer moves to a button instead. Sub-fleets that fly
+more than one layout offer each of them, labelled with the tails that carry it.
+
+Where the suggestion is weaker, it says so rather than implying unanimity. The base
+is reported with how many of the sub-fleet share it: three of the four ATRs sit at
+Belgrade and one at Niš, and the form says exactly that.
+
+None of this is a write path. The same Zod schema and the same kernel rules run on
+save, `AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET` still fires on a genuine one-off, and
+the audit entry records what the operator submitted — never what the fleet suggested.

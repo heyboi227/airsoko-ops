@@ -18,6 +18,7 @@ both the API and the browser.
 | `deriveFleetState` — position, state, rotation, from flights | Done, pure                 |
 | `evaluateAircraftAssignment` — the Phase 3 assignment gate   | Done, 20 unit tests        |
 | Registering an airframe with its cabins                      | Done, 20 unit tests        |
+| Cabin autofill from the tails already flying the type        | Done, decision 26          |
 | Retiring an airframe                                         | Done, migration `0004`     |
 | Maintenance standing across calendar / hours / cycles        | Done, 96 events seeded     |
 | Amenity resolution across four scopes                        | Done, 11 unit tests        |
@@ -28,7 +29,7 @@ both the API and the browser.
 
 ### Verified
 
-- 112 domain unit tests and 58 acceptance tests pass; `npm run verify` exits 0.
+- 118 domain unit tests and 66 acceptance tests pass; `npm run verify` exits 0.
 - Withdrawing an airframe with onward sectors names them by flight number before it
   happens, refuses to apply until the warning is acknowledged by its code, and raises a
   critical alert per stranded flight when it does.
@@ -39,6 +40,11 @@ both the API and the browser.
   aircraft claims to be at an airport.
 - A registered airframe round-trips: created, listed with the right capacity, retired,
   gone from the fleet, and its marks available again.
+- Choosing a type on the registration form fills the cabins from the airframes already
+  flying it — nine A320s seat 148, and so does the tenth before a row is typed. The
+  layout comes back exactly as it was written, aisles included, on a twin-aisle cabin
+  too. A hand edit ends the arrangement: the cabins stop claiming to match the fleet,
+  and correcting the type afterwards does not take the edit back.
 - Amenity resolution is order-independent, and adding a grant beside an existing
   withdrawal is warned as changing nothing rather than silently doing nothing.
 - The dashboard, the fleet page and the aircraft profile all read `loadFleet`. There is

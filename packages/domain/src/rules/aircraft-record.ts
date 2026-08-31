@@ -68,6 +68,67 @@ export function draftSeatCapacity(cabins: readonly CabinDraft[]): number {
   return cabins.reduce((total, cabin) => total + cabinSeatCount(cabin), 0);
 }
 
+/**
+ * A cabin layout as an airline writes it, taken apart.
+ *
+ * "ABC-DEF" is six abreast with one aisle; "AC-DF" is a four-abreast business
+ * cabin; "AB-CDEF-GH" is a twin-aisle row. The dashes are the aisles, and a
+ * seat is on an aisle when it sits on either side of one.
+ *
+ * Two facts come out of one field, and both are stored -- the letters on the
+ * cabin, the aisle positions on the individual seats, which is the only place
+ * anything reads them. The dashes themselves are notation and are stored
+ * nowhere.
+ */
+export interface CabinLayout {
+  /** The seat letters, dashes removed, e.g. "ABCDEF". */
+  letters: string;
+  /** Letters with an aisle on at least one side, e.g. "CD". */
+  aisleLetters: string;
+}
+
+export function parseCabinLayout(layout: string): CabinLayout {
+  const groups = layout.trim().toUpperCase().split("-");
+  const aisle = new Set<string>();
+
+  for (let index = 0; index < groups.length - 1; index += 1) {
+    const left = groups[index];
+    const right = groups[index + 1];
+    if (left) aisle.add(left[left.length - 1] as string);
+    if (right) aisle.add(right[0] as string);
+  }
+
+  return { letters: groups.join(""), aisleLetters: [...aisle].join("") };
+}
+
+/**
+ * The inverse: a stored cabin written back the way it was typed.
+ *
+ * Needed because a cabin on file keeps the letters and the aisle flags but not
+ * the string, and offering an existing configuration as a starting point means
+ * putting that string back in the field.
+ *
+ * A dash goes between two adjacent letters that are both on an aisle, which is
+ * exactly the condition `parseCabinLayout` creates. Every layout this fleet
+ * flies round-trips unchanged. One shape does not: a cabin where *every* seat
+ * touches an aisle -- 1-2-1 business, "A-CD-F" -- comes back as "A-C-D-F",
+ * because the stored facts cannot tell the two apart. They are the same
+ * aircraft: the same letters, the same windows, the same seats on an aisle.
+ * Only the notation differs, and it re-parses to what it came from.
+ */
+export function formatCabinLayout(seatLetters: string, aisleLetters: string): string {
+  const letters = [...seatLetters.trim().toUpperCase()];
+  const aisles = new Set([...aisleLetters.trim().toUpperCase()]);
+
+  return letters
+    .map((letter, index) => {
+      const next = letters[index + 1];
+      const aisleBetween = next !== undefined && aisles.has(letter) && aisles.has(next);
+      return aisleBetween ? `${letter}-` : letter;
+    })
+    .join("");
+}
+
 export function evaluateRegisterAircraft(
   draft: AircraftDraft,
   context: RegisterAircraftContext,

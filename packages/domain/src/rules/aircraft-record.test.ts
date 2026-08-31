@@ -3,6 +3,8 @@ import {
   cabinSeatCount,
   draftSeatCapacity,
   evaluateRegisterAircraft,
+  formatCabinLayout,
+  parseCabinLayout,
   type AircraftDraft,
   type CabinDraft,
   type ExistingAirframe,
@@ -88,6 +90,52 @@ describe("cabinSeatCount", () => {
         cabin({ cabinClass: "economy", firstRow: 5, lastRow: 30, seatLetters: "ABCDEF" }),
       ]),
     ).toBe(16 + 156);
+  });
+});
+
+describe("cabin layout notation", () => {
+  it("reads the letters, the aisles and nothing else out of one field", () => {
+    expect(parseCabinLayout("ABC-DEF")).toEqual({ letters: "ABCDEF", aisleLetters: "CD" });
+    expect(parseCabinLayout("AC-DF")).toEqual({ letters: "ACDF", aisleLetters: "CD" });
+    expect(parseCabinLayout("AB-CDEF-GH")).toEqual({
+      letters: "ABCDEFGH",
+      aisleLetters: "BCFG",
+    });
+  });
+
+  it("takes the layout however it was typed", () => {
+    expect(parseCabinLayout("  abc-def  ")).toEqual({ letters: "ABCDEF", aisleLetters: "CD" });
+  });
+
+  it("writes a stored cabin back the way it was typed", () => {
+    expect(formatCabinLayout("ABCDEF", "CD")).toBe("ABC-DEF");
+    expect(formatCabinLayout("ACDF", "CD")).toBe("AC-DF");
+    expect(formatCabinLayout("ABCDEFGH", "BCFG")).toBe("AB-CDEF-GH");
+    expect(formatCabinLayout("ABCDEFG", "BCEF")).toBe("AB-CDE-FG");
+  });
+
+  it("has no aisle to mark when none was recorded", () => {
+    expect(formatCabinLayout("ABCD", "")).toBe("ABCD");
+  });
+
+  // Every configuration this fleet flies survives the trip. Offering an
+  // existing cabin as a starting point is only honest if it comes back as the
+  // aircraft it describes.
+  it("round-trips every layout in the fleet", () => {
+    for (const layout of ["ABC-DEF", "AC-DF", "AB-CD", "AB-CDE-FG", "AB-CDEF-GH"]) {
+      const parsed = parseCabinLayout(layout);
+      expect(formatCabinLayout(parsed.letters, parsed.aisleLetters)).toBe(layout);
+    }
+  });
+
+  // The one shape the stored facts cannot distinguish: a cabin where every
+  // seat touches an aisle. The notation changes, the aircraft does not -- same
+  // letters, same windows, same seats on an aisle -- and it re-parses to what
+  // it came from, which is the property that actually matters.
+  it("cannot tell a 1-2-1 cabin from a 1-1-1-1, but round-trips the facts", () => {
+    const parsed = parseCabinLayout("A-CD-F");
+    expect(formatCabinLayout(parsed.letters, parsed.aisleLetters)).toBe("A-C-D-F");
+    expect(parseCabinLayout("A-C-D-F")).toEqual(parsed);
   });
 });
 

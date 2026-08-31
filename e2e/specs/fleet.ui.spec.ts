@@ -247,7 +247,12 @@ test.describe("Registering an aircraft", () => {
       .filter({ hasText: /^A320 / })
       .click();
     await form.getByLabel("Delivered on").fill("2019-05-10");
-    await form.getByLabel("Last row").fill("25");
+
+    // Picking the type fills the cabins from the nine A320s already flying, so
+    // there is nothing left to type. Waiting on the total is also what makes
+    // this deterministic: it is the form saying the fleet has answered.
+    await expect(form.getByText("148 seats in total")).toBeVisible();
+
     await form.getByRole("button", { name: "Review and register" }).click();
 
     const confirm = page.getByRole("dialog", { name: /^Register YU-APE/ });
@@ -260,6 +265,81 @@ test.describe("Registering an aircraft", () => {
     // The form is still there with what was typed, so a refusal is a
     // correction rather than a retype.
     await expect(form.getByLabel("Registration")).toHaveValue("YU-APE");
+    await form.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("choosing a type fills the cabins from the tails already flying it", async ({
+    page,
+  }) => {
+    await openFleetAs(page, ACCOUNTS.fleetManager);
+    await page.getByRole("button", { name: "Register aircraft" }).click();
+
+    const form = page.getByRole("dialog", { name: "Register an aircraft" });
+    await expect(form.getByText("0 seats in total")).toBeVisible();
+
+    await form.getByLabel(/^Type/).click();
+    await page
+      .getByRole("option")
+      .filter({ hasText: /^A320 / })
+      .click();
+
+    // Nothing was typed. The nine A320s on file seat 148 each, and the layout
+    // that produces that number is now in the fields -- both cabins, written
+    // the way the fleet writes them.
+    await expect(form.getByText("148 seats in total")).toBeVisible();
+    await expect(form.getByRole("alert")).toContainText("match all 9 other A320s on file");
+    await expect(form.getByLabel("Layout").first()).toHaveValue("AC-DF");
+    await expect(form.getByLabel("Layout").nth(1)).toHaveValue("ABC-DEF");
+    await expect(form.getByLabel("Last row").nth(1)).toHaveValue("26");
+
+    // And the base, with how much of the sub-fleet agrees rather than a bare
+    // answer -- here, all of it.
+    await expect(form.getByText("Where every other A320 on file is based.")).toBeVisible();
+
+    await form.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("a hand-typed cabin is the operator's, and a type change does not take it back", async ({
+    page,
+  }) => {
+    await openFleetAs(page, ACCOUNTS.fleetManager);
+    await page.getByRole("button", { name: "Register aircraft" }).click();
+
+    const form = page.getByRole("dialog", { name: "Register an aircraft" });
+    await form.getByLabel(/^Type/).click();
+    await page
+      .getByRole("option")
+      .filter({ hasText: /^A320 / })
+      .click();
+    await expect(form.getByText("148 seats in total")).toBeVisible();
+
+    // This tail really is fitted differently. One edit, and the cabins stop
+    // claiming to match the fleet -- because they no longer do.
+    await form.getByLabel("Last row").nth(1).fill("30");
+    await expect(form.getByText("172 seats in total")).toBeVisible();
+    await expect(form.getByRole("alert")).toHaveCount(0);
+
+    // The offer moves to a button instead of being imposed.
+    await expect(
+      form.getByRole("button", { name: "Use the fleet layout (148 seats)" }),
+    ).toBeVisible();
+
+    // The claim this test exists for: correcting the type does not silently
+    // undo work already done by hand.
+    await form.getByLabel(/^Type/).click();
+    await page
+      .getByRole("option")
+      .filter({ hasText: /^A319 / })
+      .click();
+    await expect(
+      form.getByRole("button", { name: "Use the fleet layout (126 seats)" }),
+    ).toBeVisible();
+    await expect(form.getByText("172 seats in total")).toBeVisible();
+
+    // And taking the fleet's answer is still one click away.
+    await form.getByRole("button", { name: "Use the fleet layout (126 seats)" }).click();
+    await expect(form.getByText("126 seats in total")).toBeVisible();
+
     await form.getByRole("button", { name: "Cancel" }).click();
   });
 

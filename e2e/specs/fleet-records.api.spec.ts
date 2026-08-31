@@ -2,10 +2,11 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { ACCOUNTS, auth, signIn } from "../support/api.ts";
 
 /**
- * Registering and retiring an airframe, and changing what a cabin offers.
+ * Registering and retiring an airframe, changing what a cabin offers, and the
+ * fleet lookup that fills the registration form.
  *
- * Idempotent by construction: the one test that writes registers a tail with a
- * fixed registration and retires it in a `finally`. Retiring frees the marks
+ * Idempotent by construction: the tests that write register a tail with a
+ * fixed registration and retire it in a `finally`. Retiring frees the marks
  * again -- see migration 0004 -- so the suite can be re-run without a reset.
  */
 
@@ -20,6 +21,38 @@ interface Preview {
 interface TypeRow {
   id: string;
   icaoTypeCode: string;
+}
+
+interface Configurations {
+  typeId: string;
+  icaoTypeCode: string;
+  onFile: number;
+  configurations: {
+    seatCapacity: number;
+    cabins: {
+      cabinClass: string;
+      firstRow: number;
+      lastRow: number;
+      layout: string;
+      pitchInches: number;
+      seatCount: number;
+    }[];
+    aircraft: { id: string; registration: string }[];
+  }[];
+  base: { id: string; iataCode: string; name: string; sharedBy: number } | null;
+}
+
+async function configurationsFor(
+  request: APIRequestContext,
+  token: string,
+  code: string,
+): Promise<Configurations> {
+  const type = await typeByCode(request, token, code);
+  const response = await request.get(`/api/aircraft/types/${type.id}/configurations`, {
+    headers: auth(token),
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as Configurations;
 }
 
 const TEST_REGISTRATION = "YU-ZZT";
@@ -273,6 +306,162 @@ test.describe("registering an airframe", () => {
     });
 
     expect(response.status()).toBe(403);
+  });
+});
+
+/**
+ * Autofill for the registration form.
+ *
+ * The station form fills itself from a reference file because an airport's
+ * coordinates are a fact about the world someone else recorded. A cabin is
+ * not: it is the airline's own decision, and the fleet on file is the only
+ * place it is written down. So this asks the fleet -- and what it gives back
+ * has to be the aircraft, not an approximation of it.
+ */
+test.describe("what the fleet already knows about a type", () => {
+  test("a sub-fleet flown one way is one offer, naming every tail in it", async ({
+    request,
+  }) => {
+    const token = await signIn(request, ACCOUNTS.fleetManager);
+    const body = await configurationsFor(request, token, "A320");
+
+    expect(body.onFile).toBe(9);
+    expect(body.configurations).toHaveLength(1);
+
+    const [only] = body.configurations;
+    expect(only?.aircraft).toHaveLength(9);
+    expect(only?.aircraft.map((item) => item.registration)).toContain("YU-APE");
+
+    // 4 rows of four plus 22 rows of six. Summed from the layout being
+    // offered, not read from a column, so the figure cannot disagree with the
+    // cabins printed beside it.
+    expect(only?.seatCapacity).toBe(148);
+    expect(only?.cabins).toEqual([
+      {
+        cabinClass: "business",
+        firstRow: 1,
+        lastRow: 4,
+        layout: "AC-DF",
+        pitchInches: 34,
+        seatCount: 16,
+      },
+      {
+        cabinClass: "economy",
+        firstRow: 5,
+        lastRow: 26,
+        layout: "ABC-DEF",
+        pitchInches: 30,
+        seatCount: 132,
+      },
+    ]);
+  });
+
+  test("the aisles come back where they were, on a twin-aisle cabin too", async ({
+    request,
+  }) => {
+    // The layout string is notation and is stored nowhere: the letters live on
+    // the cabin and the aisles on the individual seats. Putting it back
+    // together is the part that could quietly be wrong, and a 2-4-2 with a
+    // 2-3-2 above it is where it would show.
+    const token = await signIn(request, ACCOUNTS.fleetManager);
+    const body = await configurationsFor(request, token, "A332");
+
+    const [only] = body.configurations;
+    expect(only?.cabins.map((cabin) => cabin.layout)).toEqual([
+      "AC-DF",
+      "AB-CDE-FG",
+      "AB-CDEF-GH",
+    ]);
+    expect(only?.seatCapacity).toBe(249);
+  });
+
+  test("the base comes with how much of the sub-fleet agrees, not as a bare answer", async ({
+    request,
+  }) => {
+    const token = await signIn(request, ACCOUNTS.fleetManager);
+    const body = await configurationsFor(request, token, "AT76");
+
+    // Three ATRs sit at Belgrade and one at Niš. The form is told both
+    // numbers so it can say which it is rather than implying unanimity.
+    expect(body.base?.iataCode).toBe("BEG");
+    expect(body.base?.sharedBy).toBe(3);
+    expect(body.onFile).toBe(4);
+  });
+
+  test("a one-off layout is offered beside the standard, and leaves with the airframe", async ({
+    request,
+  }) => {
+    const token = await signIn(request, ACCOUNTS.fleetManager);
+    const type = await typeByCode(request, token, "A320");
+    let created: string | null = null;
+
+    try {
+      const response = await request.post("/api/aircraft", {
+        headers: auth(token),
+        data: {
+          ...draft(type.id),
+          mutation: {
+            preview: false,
+            acknowledgedWarnings: [
+              "AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET",
+              "AIRCRAFT_REGISTRATION_PREVIOUSLY_USED",
+              "AIRCRAFT_SERIAL_IN_USE",
+            ],
+          },
+        },
+      });
+      expect(response.status()).toBe(201);
+      created = ((await response.json()) as { aircraft: { id: string } }).aircraft.id;
+
+      const withOneOff = await configurationsFor(request, token, "A320");
+      expect(withOneOff.configurations).toHaveLength(2);
+
+      // Most-flown first: the layout nine tails carry outranks the one a
+      // single tail does, because that is the one the form fills in.
+      expect(withOneOff.configurations[0]?.seatCapacity).toBe(148);
+      expect(withOneOff.configurations[0]?.aircraft).toHaveLength(9);
+      expect(withOneOff.configurations[1]?.seatCapacity).toBe(216);
+      expect(withOneOff.configurations[1]?.aircraft.map((item) => item.registration)).toEqual([
+        TEST_REGISTRATION,
+      ]);
+    } finally {
+      if (created) {
+        const retire = await request.post(`/api/aircraft/${created}/retire`, {
+          headers: auth(token),
+          data: { mutation: { preview: false, acknowledgedWarnings: [] } },
+        });
+        expect(retire.status()).toBe(200);
+      }
+    }
+
+    // A layout that has left the fleet is not the one to copy, which is the
+    // same line the capacity warning draws.
+    const after = await configurationsFor(request, token, "A320");
+    expect(after.configurations).toHaveLength(1);
+    expect(after.onFile).toBe(9);
+  });
+
+  test("a type that is not on file is a 404, and a malformed id a 400", async ({ request }) => {
+    const token = await signIn(request, ACCOUNTS.fleetManager);
+
+    const missing = await request.get(
+      "/api/aircraft/types/00000000-0000-4000-8000-000000000000/configurations",
+      { headers: auth(token) },
+    );
+    expect(missing.status()).toBe(404);
+
+    const malformed = await request.get("/api/aircraft/types/not-an-id/configurations", {
+      headers: auth(token),
+    });
+    expect(malformed.status()).toBe(400);
+  });
+
+  test("the lookup needs authentication", async ({ request }) => {
+    const fleetToken = await signIn(request, ACCOUNTS.fleetManager);
+    const type = await typeByCode(request, fleetToken, "A320");
+
+    const anonymous = await request.get(`/api/aircraft/types/${type.id}/configurations`);
+    expect(anonymous.status()).toBe(401);
   });
 });
 

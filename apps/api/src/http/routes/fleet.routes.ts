@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { and, eq, gte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   aircraftServiceabilitySchema,
   cabinClassSchema,
+  idSchema,
   mutationOptionsSchema,
   SERVICEABILITY_LABELS,
+  type CabinConfiguration,
+  type FleetConfiguration,
+  type TypeConfigurations,
 } from "@airsoko/contracts";
 import {
   cabinSeatCount,
@@ -14,6 +18,8 @@ import {
   evaluateRegisterAircraft,
   evaluateRetireAircraft,
   evaluateWithdrawAircraft,
+  formatCabinLayout,
+  parseCabinLayout,
   resolveAmenities,
   resourceRef,
 } from "@airsoko/domain";
@@ -380,26 +386,6 @@ const createAircraftSchema = z.object({
   cabins: z.array(cabinDraftSchema).min(1).max(4),
 });
 
-interface ParsedLayout {
-  letters: string;
-  /** Letters with an aisle on at least one side. */
-  aisleLetters: string;
-}
-
-function parseLayout(layout: string): ParsedLayout {
-  const groups = layout.trim().toUpperCase().split("-");
-  const aisle = new Set<string>();
-
-  for (let index = 0; index < groups.length - 1; index += 1) {
-    const left = groups[index];
-    const right = groups[index + 1];
-    if (left) aisle.add(left[left.length - 1] as string);
-    if (right) aisle.add(right[0] as string);
-  }
-
-  return { letters: groups.join(""), aisleLetters: [...aisle].join("") };
-}
-
 fleetRouter.post("/", requireAuth, requirePermission("aircraft:write"), async (req, res) => {
   const { mutation: rawOptions, ...body } = req.body ?? {};
   const input = createAircraftSchema.parse(body);
@@ -421,7 +407,7 @@ fleetRouter.post("/", requireAuth, requirePermission("aircraft:write"), async (r
   if (!type) throw notFound(`Aircraft type ${input.aircraftTypeId}`);
 
   const registration = input.registration.trim().toUpperCase();
-  const layouts = input.cabins.map((cabin) => parseLayout(cabin.layout));
+  const layouts = input.cabins.map((cabin) => parseCabinLayout(cabin.layout));
   const draftCabins = input.cabins.map((cabin, index) => ({
     cabinClass: cabin.cabinClass,
     firstRow: cabin.firstRow,
@@ -565,6 +551,198 @@ fleetRouter.get(
     res.json({ items, total: items.length });
   },
 );
+
+/**
+ * How this type is fitted out, and which tails are fitted that way.
+ *
+ * Autofill for the registration form, and the counterpart to the station
+ * lookup -- except that here there is no reference to consult. An airport's
+ * coordinates are a fact about the world someone else has already recorded; an
+ * aircraft's cabin is the airline's own decision, and the only place it is
+ * written down is the fleet already on file. So this asks the fleet. A new
+ * tail of an existing type is fitted like its siblings almost every time, and
+ * the rare one that is not is exactly what
+ * `AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET` exists to notice on save.
+ *
+ * Retired airframes are excluded, matching that rule: a layout that has left
+ * the fleet is not the one to copy.
+ *
+ * Two things are reconstructed rather than read. The layout string, because
+ * only the letters live on the cabin and the aisles on the seats -- decision
+ * 22 -- so the notation has to be put back together from both. And the seat
+ * count, computed from the layout being offered rather than taken from the
+ * stored column, so the number the form shows cannot disagree with the layout
+ * it is showing beside it.
+ */
+fleetRouter.get(
+  "/types/:id/configurations",
+  requireAuth,
+  requirePermission("aircraft:read"),
+  async (req, res) => {
+    const typeId = idSchema.parse(pathParam(req, "id"));
+
+    const [type] = await db
+      .select({ id: aircraftTypes.id, icaoTypeCode: aircraftTypes.icaoTypeCode })
+      .from(aircraftTypes)
+      .where(eq(aircraftTypes.id, typeId))
+      .limit(1);
+
+    if (!type) throw notFound(`Aircraft type ${typeId}`);
+
+    const rows = await db
+      .select({
+        aircraftId: aircraft.id,
+        registration: aircraft.registration,
+        baseAirportId: aircraft.baseAirportId,
+        baseIata: airports.iataCode,
+        baseName: airports.name,
+        cabinId: aircraftCabins.id,
+        cabinClass: aircraftCabins.cabinClass,
+        firstRow: aircraftCabins.firstRow,
+        lastRow: aircraftCabins.lastRow,
+        seatLetters: aircraftCabins.seatLetters,
+        pitchInches: aircraftCabins.pitchInches,
+      })
+      .from(aircraft)
+      .innerJoin(aircraftCabins, eq(aircraftCabins.aircraftId, aircraft.id))
+      .leftJoin(airports, eq(airports.id, aircraft.baseAirportId))
+      .where(and(eq(aircraft.aircraftTypeId, typeId), eq(aircraft.active, true)))
+      .orderBy(asc(aircraft.registration), asc(aircraftCabins.firstRow));
+
+    const aisleLetters = await aisleLettersByCabin(rows.map((row) => row.cabinId));
+
+    const byAirframe = new Map<string, Airframe>();
+    for (const row of rows) {
+      let entry = byAirframe.get(row.aircraftId);
+      if (!entry) {
+        entry = {
+          registration: row.registration,
+          baseAirportId: row.baseAirportId,
+          baseIata: row.baseIata,
+          baseName: row.baseName,
+          cabins: [],
+        };
+        byAirframe.set(row.aircraftId, entry);
+      }
+      entry.cabins.push({
+        cabinClass: row.cabinClass,
+        firstRow: row.firstRow,
+        lastRow: row.lastRow,
+        layout: formatCabinLayout(row.seatLetters, aisleLetters.get(row.cabinId) ?? ""),
+        pitchInches: row.pitchInches,
+        seatCount: cabinSeatCount(row),
+      });
+    }
+
+    // Airframes fitted identically collapse into one offer that names them
+    // all. Two A320s with the same cabins are one choice, not two.
+    const grouped = new Map<string, FleetConfiguration>();
+    for (const [id, airframe] of byAirframe) {
+      const key = configurationKey(airframe.cabins);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.aircraft.push({ id, registration: airframe.registration });
+        continue;
+      }
+      grouped.set(key, {
+        cabins: airframe.cabins,
+        seatCapacity: airframe.cabins.reduce((total, cabin) => total + cabin.seatCount, 0),
+        aircraft: [{ id, registration: airframe.registration }],
+      });
+    }
+
+    // Most-flown first -- that is the one the form applies. Ties break on
+    // capacity and then on registration, so the offer does not reshuffle
+    // between two identical requests.
+    const configurations = [...grouped.values()].sort(
+      (a, b) =>
+        b.aircraft.length - a.aircraft.length ||
+        b.seatCapacity - a.seatCapacity ||
+        (a.aircraft[0]?.registration ?? "").localeCompare(b.aircraft[0]?.registration ?? ""),
+    );
+
+    const payload: TypeConfigurations = {
+      typeId: type.id,
+      icaoTypeCode: type.icaoTypeCode,
+      onFile: byAirframe.size,
+      configurations,
+      base: commonBase([...byAirframe.values()]),
+    };
+
+    res.json(payload);
+  },
+);
+
+interface Airframe {
+  registration: string;
+  baseAirportId: string | null;
+  baseIata: string | null;
+  baseName: string | null;
+  cabins: CabinConfiguration[];
+}
+
+/** Two airframes are fitted the same way when every cabin matches. */
+function configurationKey(cabins: readonly CabinConfiguration[]): string {
+  return cabins
+    .map(
+      (cabin) =>
+        `${cabin.cabinClass}:${cabin.firstRow}-${cabin.lastRow}:${cabin.layout}@${cabin.pitchInches}`,
+    )
+    .join("|");
+}
+
+/**
+ * Which letters sit on an aisle, per cabin.
+ *
+ * The seats are the only place this is recorded, and one row of any cabin
+ * answers it for the whole cabin -- so this asks for the distinct letters
+ * flagged, not for three thousand seat rows.
+ */
+async function aisleLettersByCabin(cabinIds: readonly string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(cabinIds)];
+  if (ids.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      cabinId: seats.cabinId,
+      letters: sql<string>`string_agg(distinct ${seats.letter}, '' order by ${seats.letter})`,
+    })
+    .from(seats)
+    .where(and(inArray(seats.cabinId, ids), eq(seats.isAisle, true)))
+    .groupBy(seats.cabinId);
+
+  return new Map(rows.map((row) => [row.cabinId, row.letters]));
+}
+
+/**
+ * Where most of this sub-fleet sits.
+ *
+ * Reported with the count rather than as a bare answer, because a base is a
+ * weaker suggestion than a cabin: the ATR sub-fleet is mostly at BEG and one
+ * tail is not, and the form should be able to say so instead of quietly
+ * choosing for the operator.
+ */
+function commonBase(airframes: readonly Airframe[]): TypeConfigurations["base"] {
+  const counts = new Map<string, { iataCode: string; name: string; sharedBy: number }>();
+
+  for (const airframe of airframes) {
+    if (!airframe.baseAirportId || !airframe.baseIata || !airframe.baseName) continue;
+    const found = counts.get(airframe.baseAirportId);
+    if (found) found.sharedBy += 1;
+    else
+      counts.set(airframe.baseAirportId, {
+        iataCode: airframe.baseIata,
+        name: airframe.baseName,
+        sharedBy: 1,
+      });
+  }
+
+  const [top] = [...counts.entries()].sort(
+    (a, b) => b[1].sharedBy - a[1].sharedBy || a[1].iataCode.localeCompare(b[1].iataCode),
+  );
+
+  return top ? { id: top[0], ...top[1] } : null;
+}
 
 /** Every airframe, in the shape the registration rules read. */
 async function loadAirframes(executor: Executor = db) {
