@@ -40,6 +40,18 @@ export const RULE_CODES = [
   "AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET",
   "AIRCRAFT_REGISTRATION_PREFIX_UNUSUAL",
 
+  // --- Airport records -----------------------------------------------------
+  // Split for the same reason as the aircraft-record codes above: the two
+  // warnings here -- a coincident position, and routes left without an
+  // endpoint -- are separate things to accept, and one shared code would
+  // render a single checkbox that quietly accepts both.
+  "AIRPORT_IATA_IN_USE",
+  "AIRPORT_ICAO_IN_USE",
+  "AIRPORT_COORDINATES_MISSING",
+  "AIRPORT_COORDINATES_COINCIDENT",
+  "AIRPORT_HAS_UPCOMING_FLIGHTS",
+  "AIRPORT_HAS_ROUTES",
+
   // --- Crew ----------------------------------------------------------------
   "CREW_POSITION_UNFILLED",
   "CREW_OVERLAPPING_DUTY",
@@ -81,7 +93,7 @@ export type RuleSeverity = z.infer<typeof ruleSeveritySchema>;
 export const resourceRefSchema = z.object({
   kind: resourceKindSchema,
   id: idSchema,
-  /** What a human calls it: "SK412", "YU-ASA", "M. Petrovic". */
+  /** What a human calls it: "SO412", "YU-ASA", "M. Petrovic". */
   label: z.string(),
 });
 export type ResourceRef = z.infer<typeof resourceRefSchema>;
@@ -89,7 +101,7 @@ export type ResourceRef = z.infer<typeof resourceRefSchema>;
 export const ruleFindingSchema = z.object({
   code: ruleCodeSchema,
   severity: ruleSeveritySchema,
-  /** One line, scannable in a list: "Aircraft already flying SK118". */
+  /** One line, scannable in a list: "Aircraft already flying SO118". */
   title: z.string(),
   /** Precise, quantified, and specific to this case -- never generic advice. */
   detail: z.string(),

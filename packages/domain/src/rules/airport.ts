@@ -63,7 +63,7 @@ export function evaluateSaveAirport(
   if (iataClash) {
     builder.add(
       blocking(
-        "SCHEDULE_AIRPORT_RESTRICTION",
+        "AIRPORT_IATA_IN_USE",
         `IATA code ${airport.iataCode} is already in use`,
         `${iataClash.name} (${iataClash.city}) already holds ${iataClash.iataCode}. IATA codes identify an airport uniquely across the network and cannot be shared.`,
         { subject: resourceRef("airport", iataClash.id, iataClash.iataCode) },
@@ -75,7 +75,7 @@ export function evaluateSaveAirport(
   if (icaoClash) {
     builder.add(
       blocking(
-        "SCHEDULE_AIRPORT_RESTRICTION",
+        "AIRPORT_ICAO_IN_USE",
         `ICAO code ${airport.icaoCode} is already in use`,
         `${icaoClash.name} (${icaoClash.city}) already holds ${icaoClash.icaoCode}.`,
         { subject: resourceRef("airport", icaoClash.id, icaoClash.icaoCode) },
@@ -88,7 +88,7 @@ export function evaluateSaveAirport(
   if (Math.abs(airport.latitude) < 1e-6 && Math.abs(airport.longitude) < 1e-6) {
     builder.add(
       blocking(
-        "SCHEDULE_AIRPORT_RESTRICTION",
+        "AIRPORT_COORDINATES_MISSING",
         "Coordinates are missing",
         "Latitude and longitude are both zero, which places this airport in the Atlantic. Route distances and the live map both read these values directly.",
       ),
@@ -105,7 +105,7 @@ export function evaluateSaveAirport(
   if (coincident) {
     builder.add(
       warning(
-        "SCHEDULE_AIRPORT_RESTRICTION",
+        "AIRPORT_COORDINATES_COINCIDENT",
         `Coordinates coincide with ${coincident.iataCode}`,
         `These coordinates are within ${COINCIDENT_THRESHOLD_KM} km of ${coincident.name} (${coincident.iataCode}). Multi-airport cities are normal, identical positions are not.`,
         { subject: resourceRef("airport", coincident.id, coincident.iataCode) },
@@ -126,7 +126,7 @@ export function evaluateDeactivateAirport(
   if (dependencies.upcomingFlightCount > 0) {
     builder.add(
       blocking(
-        "SCHEDULE_AIRPORT_RESTRICTION",
+        "AIRPORT_HAS_UPCOMING_FLIGHTS",
         "Upcoming flights still use this airport",
         `${dependencies.upcomingFlightCount} flight${dependencies.upcomingFlightCount === 1 ? "" : "s"} not yet arrived or cancelled reference ${airport.iataCode}. Reschedule or cancel them before withdrawing the station.`,
         { subject },
@@ -137,7 +137,7 @@ export function evaluateDeactivateAirport(
   if (dependencies.routeCount > 0) {
     builder.add(
       warning(
-        "SCHEDULE_AIRPORT_RESTRICTION",
+        "AIRPORT_HAS_ROUTES",
         "Routes reference this airport",
         `${dependencies.routeCount} route${dependencies.routeCount === 1 ? "" : "s"} will be left without a serviceable endpoint and shown as suspended.`,
         { subject },

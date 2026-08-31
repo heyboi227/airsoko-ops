@@ -31,6 +31,13 @@ async function openFleetAs(page: Page, email: string) {
  * The header reads "Refreshing…" while a query is in flight and "N airframes"
  * once it is not, so this is the page's own signal that the skeleton rows have
  * been replaced by aircraft that can be clicked.
+ *
+ * It proves that no query is in flight. It does not prove that *your* filter
+ * is the one that ran: changing a filter re-renders before React commits
+ * "Refreshing…", and in that gap this matches the previous list's count and
+ * returns against stale rows. Follow it with something that retries onto the
+ * result you expect -- a row addressed by its text, or `toHaveCount` -- and
+ * never with a bare positional click.
  */
 async function settled(page: Page) {
   await expect(page.getByText(/^\d+ airframes$/)).toBeVisible();
@@ -138,7 +145,10 @@ test.describe("Fleet", () => {
 
     await page.getByLabel("Search").fill("YU-ANB");
     await settled(page);
-    await page.getByRole("row").nth(1).click();
+    // Addressed by registration rather than by position: `settled` can return
+    // while the unfiltered list is still on screen -- see its note -- and row
+    // one is then whichever tail sorts first, not this one.
+    await page.getByRole("row").filter({ hasText: "YU-ANB" }).click();
 
     const drawer = page.getByRole("presentation").last();
     await expect(drawer.getByRole("heading", { name: "YU-ANB" })).toBeVisible();
