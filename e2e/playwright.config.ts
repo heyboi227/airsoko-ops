@@ -14,7 +14,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 
 const API_URL = process.env.API_URL ?? "http://localhost:4000";
-const WEB_URL = process.env.WEB_URL ?? "http://localhost:5173";
+const WEB_URL = process.env.WEB_URL ?? "http://localhost:5273";
 
 export default defineConfig({
   testDir: "./specs",

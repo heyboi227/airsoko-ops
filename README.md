@@ -22,7 +22,7 @@ cp .env.example .env
 npm run db:up        # Postgres 18 in Docker on port 5433
 npm run db:migrate
 npm run db:seed
-npm run dev          # API on :4000, web on :5173
+npm run dev          # API on :4000, web on :5273
 ```
 
 Sign in with any demonstration account listed on the login screen. They all use the

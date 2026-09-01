@@ -23,7 +23,7 @@ const envSchema = z.object({
   TELEMETRY_PROVIDER: z.enum(["simulation", "external"]).default("simulation"),
   TELEMETRY_TICK_MS: z.coerce.number().int().min(250).max(60_000).default(2000),
 
-  WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  WEB_ORIGIN: z.string().default("http://localhost:5273"),
 });
 
 const parsed = envSchema.safeParse(process.env);
