@@ -12,10 +12,23 @@ version: 2
 
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    # The root manifest is a workspace host: every runtime dependency actually
+    # lives in apps/*, packages/* or e2e. A lone `directory: "/"` is what a
+    # single-package repository needs; this repository needs each workspace
+    # named, or updates to them are never proposed.
+    directories:
+      - "/"
+      - "/apps/*"
+      - "/packages/*"
+      - "/e2e"
     schedule:
+      # An explicit time and zone. Without them Dependabot picks its own slot
+      # and "it has not run yet" becomes indistinguishable from "it ran and
+      # found nothing" -- which is exactly the question we could not answer.
       interval: daily
-    open-pull-requests-limit: 5
+      time: "06:00"
+      timezone: Europe/Belgrade
+    open-pull-requests-limit: 10
     versioning-strategy: increase
     groups:
       types:
@@ -47,3 +60,5 @@ updates:
     directory: "/"
     schedule:
       interval: daily
+      time: "06:00"
+      timezone: Europe/Belgrade
