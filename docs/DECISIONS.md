@@ -677,3 +677,42 @@ prevent. A single threshold in the policy, disclaimed like every other number th
 the honest version: it makes the rule fire, it is configurable for demonstration, and it
 claims no authority the system does not have. That is also why it warns rather than
 blocks.
+
+---
+
+## 32. Entries made through the application are seed data too
+
+**Decided.** Every entry that goes through the mutation pipeline is also written to
+`apps/api/src/db/seed/recorded/`, one JSON file per entity, and the seed replays that
+directory after its own fixtures. The API replays it as it starts, too. Commit the files
+and a second machine ends up with the same rows.
+
+The seed owns its fixtures and nothing else (decision 9), which is the right contract for
+a fixture and no help to somebody working on two machines: a flight filed on one is
+simply absent on the other. Recording is the missing half -- the seed replays what an
+operator made, on top of what it generated.
+
+**State, not intent.** A file holds the row as it stands after the change, with the
+children that only make sense beside it: a cabin's seats, a flight's timeline. Replaying
+the intent would run the rules again on another day and refuse a retiming that was fine
+when it was made; replaying the row is an upsert, and it takes over its natural key -- a
+recorded flight number on a date replaces one the other machine's seed generated under
+its own id. A removal is a tombstone, because the seed would otherwise put a seeded row
+straight back.
+
+**By construction, not by convention.** A trigger (migration `0006`) logs which rows a
+transaction touched, and the recorder reads the current state of each back through the
+schema after the commit. A route that changes five tables records five tables without
+knowing the recorder exists, the same way `apply` cannot forget the audit entry. The
+trigger writes nothing unless the transaction set `airsoko.record_changes`, which only
+`runIntent` does: the seed, a migration, a psql session and an end-to-end test leave no
+trace. Change rows are cleared only once their files are written, and the API drains
+whatever is left when it starts, so a process that dies between commit and file loses
+nothing.
+
+**What does not sync.** The audit trail and the alert feed are records of what happened
+on the machine it happened on, and the seed produces its own; they stay local. Recording
+is on in development only, off with `SEED_RECORDING=off`, and a request can decline with
+`x-airsoko-recording: off`, which the acceptance suite sends on everything so its
+fixtures never reach the committed data. Two machines editing the same entry meet as a
+merge conflict on one file, which is the right place to meet.

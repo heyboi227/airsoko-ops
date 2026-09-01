@@ -43,6 +43,13 @@
       "when": 1788279619847,
       "tag": "0005_occurrence_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788366019847,
+      "tag": "0006_row_changes",
+      "breakpoints": true
     }
   ]
 }

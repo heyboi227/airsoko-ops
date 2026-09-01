@@ -11,6 +11,8 @@ import { db, type Transaction } from "../db/client.ts";
 import { auditEntries, operationalAlerts } from "../db/schema/index.ts";
 import { ApiProblem } from "../http/errors.ts";
 import type { Actor } from "../http/auth.ts";
+import { armRecording, recordPendingChanges, recordingArmed } from "../db/recorded/record.ts";
+import { logger } from "../logger.ts";
 
 /**
  * The mutation pipeline.
@@ -32,6 +34,11 @@ import type { Actor } from "../http/auth.ts";
  *
  * Step 5 is the one worth stressing. Audit is not the caller's responsibility
  * and cannot be forgotten: `apply` must return an audit draft to type-check.
+ *
+ * One thing happens outside the transaction, and after it: in development the
+ * rows the commit touched are recorded as seed data, so another machine can
+ * replay them. Recording is not the caller's responsibility either -- a
+ * trigger notes what changed, and the recorder reads it back. See decision 32.
  */
 
 export interface AuditDraft {
@@ -121,7 +128,11 @@ async function writeAlerts(tx: Transaction, now: Instant, drafts: AlertDraft[]):
 }
 
 export async function runIntent<T>(spec: IntentSpec<T>): Promise<IntentResult<T>> {
-  return db.transaction(async (tx) => {
+  const record = recordingArmed();
+
+  const result = await db.transaction(async (tx): Promise<IntentResult<T>> => {
+    if (record) await armRecording(tx);
+
     const evaluation = await spec.evaluate(tx);
     const decision = decide(spec.intent, evaluation, spec.options);
 
@@ -187,4 +198,18 @@ export async function runIntent<T>(spec: IntentSpec<T>): Promise<IntentResult<T>
 
     return { status: "applied", value: applied.value, preview: decision.preview };
   });
+
+  // The change is committed by now, so a recording failure is logged rather
+  // than reported as a failed request: telling the client the change did not
+  // happen would be a lie. The change rows stay for the next drain.
+  if (record && result.status === "applied") {
+    await recordPendingChanges().catch((error: unknown) => {
+      logger.error(
+        { err: error, intent: spec.intent },
+        "The change was applied but not recorded.",
+      );
+    });
+  }
+
+  return result;
 }

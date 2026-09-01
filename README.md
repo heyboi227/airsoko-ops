@@ -94,7 +94,7 @@ the whole architecture.
 | `npm run test:e2e`               | Acceptance scenarios (needs a seeded database)        |
 | `npm run db:up` / `db:down`      | Postgres container                                    |
 | `npm run db:generate`            | New migration from a schema change                    |
-| `npm run db:migrate` / `db:seed` | Apply migrations, load demo data                      |
+| `npm run db:migrate` / `db:seed` | Apply migrations; load demo data and recorded entries |
 | `npm run db:reset`               | Drop the volume and rebuild from scratch              |
 
 ---
@@ -114,6 +114,24 @@ not be described as doing so.
 
 Airport coordinates are reference points accurate to a few hundred metres — fine for
 route distances and map rendering, useless for navigation.
+
+---
+
+## Working on two machines
+
+Every entry made through the application is recorded as seed data — one JSON file per
+entity under `apps/api/src/db/seed/recorded/` — and replayed by `npm run db:seed` and by
+the API as it starts. Commit the files with your work. On the other machine, pull and
+either restart the API or run `npm run db:seed`, and the flight you filed yesterday is
+there. A removal travels as a tombstone. Decision 32 has the reasoning.
+
+Recording is on in development and off everywhere else. `SEED_RECORDING=off` turns it
+off, and a request that sends `x-airsoko-recording: off` is not recorded, which is how
+the acceptance suite keeps its fixtures out of the committed data. The audit trail and
+the alert feed stay local: they record what happened on this machine.
+
+If both machines change the same entry, `git pull` reports a conflict on that one file.
+Keep the version that is right, remove the markers, and restart the API.
 
 ---
 

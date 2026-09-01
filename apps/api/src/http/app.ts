@@ -6,6 +6,7 @@ import { pinoHttp } from "pino-http";
 import { env } from "../env.ts";
 import { logger } from "../logger.ts";
 import { errorHandler } from "./errors.ts";
+import { withRecordingPreference } from "../db/recorded/record.ts";
 import { authRouter } from "./routes/auth.routes.ts";
 import { airportsRouter } from "./routes/airports.routes.ts";
 import { amenitiesRouter } from "./routes/amenities.routes.ts";
@@ -48,6 +49,14 @@ export function createApp(): Express {
   );
 
   app.use(express.json({ limit: "1mb" }));
+
+  // A request can ask not to be recorded as seed data. The acceptance suite
+  // sends this on everything it does, so its fixtures never reach the
+  // committed entries; nothing else has a reason to. It can only decline --
+  // recording that is off stays off.
+  app.use((req, _res, next) => {
+    withRecordingPreference(req.headers["x-airsoko-recording"] !== "off", () => next());
+  });
 
   app.use("/health", healthRouter);
   app.use("/api/auth", authRouter);

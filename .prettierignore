@@ -5,4 +5,5 @@ coverage/
 playwright-report/
 test-results/
 apps/api/drizzle/
+apps/api/src/db/seed/recorded/
 package-lock.json

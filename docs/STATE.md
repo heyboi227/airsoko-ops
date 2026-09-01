@@ -30,7 +30,7 @@ persisted. **Met** — pinned by acceptance tests at both the API and the browse
 
 ### Verified
 
-- 195 domain unit tests pass, up from 118, and 98 acceptance tests across the API and
+- 195 domain unit tests pass, up from 118, and 102 acceptance tests across the API and
   the browser; `npm run verify` exits 0. The 11 still skipped are the `fixme` scenarios
   Phases 5 to 7 build.
 - Scenario A and Scenario C have left `pending-scenarios.api.spec.ts`. They are
@@ -120,6 +120,18 @@ None blocking. The two from Phase 2 still stand and are now due:
 - **Live transport.** SSE is the current plan and is in `.env.example` as
   `TELEMETRY_PROVIDER`. WebSockets become worth the complexity only if the console ever
   needs to push commands back, which nothing in the brief requires.
+
+---
+
+## Since Phase 3: recorded entries
+
+Entries made through the application are seed data now (decision 32). The mutation
+pipeline records every committed change as a JSON file under
+`apps/api/src/db/seed/recorded/`; the seed and the API's start-up replay the directory;
+the acceptance suite declines to be recorded, so its fixtures stay out of the committed
+data. Migration `0006` adds the change log and its triggers. Four acceptance tests in
+`recorded-entries.api.spec.ts` pin it, one of them by reseeding the database twice and
+reading the entry, and then its tombstone, back.
 
 ---
 

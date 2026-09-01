@@ -9,6 +9,7 @@ import { resolveCountries, resolveStations } from "./reference/index.ts";
 import { DEMO_PASSWORD, SEED_USERS, deterministicSalt } from "./users.ts";
 import { seedAircraftTypes, seedAirlines, seedFleet, seedNetwork } from "./operation.ts";
 import { seedAmenities, seedMaintenance } from "./maintenance.ts";
+import { applyRecordedEntries } from "../recorded/replay.ts";
 
 /**
  * The seed is idempotent and deterministic.
@@ -16,7 +17,8 @@ import { seedAmenities, seedMaintenance } from "./maintenance.ts";
  *  - Idempotent: every insert upserts on its natural key, so running it twice
  *    is the same as running it once. Rows an operator created through the
  *    application are never touched -- the seed owns its own fixtures and
- *    nothing else.
+ *    nothing else. What an operator did make is replayed at the end from
+ *    `seed/recorded/`, where the application records it; see decision 32.
  *  - Deterministic: identifiers come from `seededId`, salts come from the
  *    email, airport facts come from a committed reference file, and no
  *    timestamp is generated at seed time. Two machines running this get
@@ -206,6 +208,15 @@ async function main(): Promise<void> {
   const amenityCounts = await seedAmenities();
   logger.info(
     `  amenities: ${amenityCounts.amenities} configured, ${amenityCounts.assignments} assignments`,
+  );
+
+  // After the fixtures, deliberately: an entry an operator made on top of a
+  // seeded row -- a gate moved, a delay recorded -- must land after the seed
+  // has put the row back the way the pattern says.
+  const recorded = await applyRecordedEntries();
+  logger.info(
+    `  recorded:  ${recorded.applied} entries replayed from seed/recorded, ` +
+      `${recorded.removed} removals honoured`,
   );
 
   if (network.unassigned.length > 0) {

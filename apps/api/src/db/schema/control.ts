@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { bigserial, index, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { instant } from "./common.ts";
 import { alertSeverityEnum, alertStatusEnum, resourceKindEnum } from "./enums.ts";
 import { users } from "./identity.ts";
@@ -73,3 +73,24 @@ export const operationalAlerts = pgTable(
     index("operational_alerts_raised_at_idx").on(table.raisedAt),
   ],
 );
+
+/**
+ * The change log behind recorded entries -- decision 32.
+ *
+ * Filled by the `record_row_change` trigger from migration 0006, and only
+ * inside a transaction that set `airsoko.record_changes`; drained into files
+ * under `db/seed/recorded/` by the recorder after each commit. Normally
+ * empty. A row still here means a commit whose recording did not finish, and
+ * the next drain -- the next intent, or the API starting -- picks it up.
+ */
+export const rowChanges = pgTable("row_changes", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  tableName: text("table_name").notNull(),
+  rowKey: text("row_key").notNull(),
+  op: text("op").$type<"INSERT" | "UPDATE" | "DELETE">().notNull(),
+  /** The row after the change, or before a delete, in column names. */
+  rowData: jsonb("row_data").$type<Record<string, unknown>>().notNull(),
+  changedAt: instant("changed_at")
+    .notNull()
+    .default(sql`now()`),
+});

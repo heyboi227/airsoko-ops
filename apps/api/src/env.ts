@@ -19,6 +19,11 @@ const envSchema = z.object({
   JWT_REFRESH_TTL: z.string().default("7d"),
 
   SEED: z.string().default("airsoko-2026"),
+  /**
+   * Record entries made through the application as seed data, and replay
+   * them at start. Unset means on in development and off everywhere else.
+   */
+  SEED_RECORDING: z.enum(["on", "off"]).optional(),
 
   TELEMETRY_PROVIDER: z.enum(["simulation", "external"]).default("simulation"),
   TELEMETRY_TICK_MS: z.coerce.number().int().min(250).max(60_000).default(2000),

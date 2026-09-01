@@ -15,3 +15,6 @@ Thumbs.db
 # Downloaded source data for the reference importer. The 358 KB curated JSON it
 # produces is committed; the 12.7 MB CSV it derives that from is not.
 .cache/
+
+# A recorded entry is written to a staging file and renamed into place.
+apps/api/src/db/seed/recorded/**/*.tmp

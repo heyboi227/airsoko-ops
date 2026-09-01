@@ -28,6 +28,10 @@ export default defineConfig({
 
   use: {
     baseURL: WEB_URL,
+    // Nothing the suite creates belongs in the committed seed data. The API
+    // records every entry as seed data in development (decision 32); this
+    // header, sent on every request the suite and its browser make, declines.
+    extraHTTPHeaders: { "x-airsoko-recording": "off" },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
