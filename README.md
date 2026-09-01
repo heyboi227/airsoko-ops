@@ -16,7 +16,12 @@ than showing a convincing mock.
 
 ## Quickstart
 
+Node 24 and npm 11. The version lives in `.nvmrc`, CI reads that same file, and
+`engine-strict` refuses anything older rather than letting it quietly rewrite the
+lockfile.
+
 ```bash
+nvm use              # Node 24, npm 11
 npm install
 cp .env.example .env
 npm run db:up        # Postgres 18 in Docker on port 5433

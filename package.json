@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Air Soko operations administration console",
   "engines": {
-    "node": ">=22"
+    "node": ">=24",
+    "npm": ">=11"
   },
   "workspaces": [
     "packages/*",
