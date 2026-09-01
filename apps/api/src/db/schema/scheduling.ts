@@ -9,6 +9,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import type { OverridableField } from "@airsoko/contracts";
 import { instant, lifecycle } from "./common.ts";
 import { delayReasonEnum, flightPhaseEnum, flightStatusEnum, flightTypeEnum } from "./enums.ts";
 import { aircraft, aircraftTypes } from "./fleet.ts";
@@ -132,6 +133,24 @@ export const flightInstances = pgTable(
     baggageCarousel: varchar("baggage_carousel", { length: 8 }),
 
     notes: text("notes"),
+
+    /**
+     * Which fields this occurrence carries independently of its pattern.
+     *
+     * Scenario C's mechanism. A generated occurrence normally follows its
+     * schedule; the moment somebody edits one by hand, the fields they changed
+     * are recorded here, and a later edit to the series leaves exactly those
+     * alone. Storing the field names rather than a single `is_exception` flag
+     * is what lets a series retiming still reach an occurrence whose gate was
+     * moved -- a gate exception and a time exception are different exceptions.
+     *
+     * Empty on an ad-hoc flight, which has no pattern to diverge from.
+     */
+    overriddenFields: text("overridden_fields")
+      .array()
+      .$type<OverridableField[]>()
+      .notNull()
+      .default([]),
     ...lifecycle,
   },
   (table) => [

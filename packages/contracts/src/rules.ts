@@ -40,6 +40,19 @@ export const RULE_CODES = [
   "AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET",
   "AIRCRAFT_REGISTRATION_PREFIX_UNUSUAL",
 
+  // --- Flight instances ----------------------------------------------------
+  // The lifecycle codes are separate from the schedule ones below because they
+  // guard different things: a schedule is a plan that has to be coherent, a
+  // flight is an operation that has already started happening.
+  "FLIGHT_NUMBER_IN_USE_ON_DATE",
+  "FLIGHT_ALREADY_DEPARTED",
+  "FLIGHT_STATUS_TRANSITION_INVALID",
+  "FLIGHT_NO_AIRCRAFT_ASSIGNED",
+  "FLIGHT_DELAY_SIGNIFICANT",
+  "FLIGHT_HAS_BOOKINGS",
+  "FLIGHT_OCCURRENCE_DIVERGED",
+  "FLIGHT_BELONGS_TO_SERIES",
+
   // --- Airport records -----------------------------------------------------
   // Split for the same reason as the aircraft-record codes above: the two
   // warnings here -- a coincident position, and routes left without an
@@ -67,6 +80,11 @@ export const RULE_CODES = [
   "SCHEDULE_DURATION_IMPLAUSIBLE",
   "SCHEDULE_OUTSIDE_VALIDITY_WINDOW",
   "SCHEDULE_AIRPORT_RESTRICTION",
+  "SCHEDULE_NO_OPERATING_DAYS",
+  "SCHEDULE_VALIDITY_INVERTED",
+  "SCHEDULE_FLIGHT_NUMBER_IN_USE",
+  "SCHEDULE_EDIT_AFFECTS_NOTHING",
+  "SCHEDULE_HAS_OCCURRENCES",
 
   // --- Maintenance ---------------------------------------------------------
   "MAINTENANCE_LIMIT_APPROACHING",
@@ -131,6 +149,12 @@ export const CONSEQUENCE_KINDS = [
   "analytics_restated",
   "occurrences_affected",
   "amenity_resolution_changed",
+  "flight_created",
+  "flight_rescheduled",
+  "flight_status_changed",
+  "flight_deleted",
+  "gate_changed",
+  "delay_recorded",
 ] as const;
 export const consequenceKindSchema = z.enum(CONSEQUENCE_KINDS);
 export type ConsequenceKind = z.infer<typeof consequenceKindSchema>;

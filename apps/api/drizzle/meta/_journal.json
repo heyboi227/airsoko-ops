@@ -36,6 +36,13 @@
       "when": 1788193219847,
       "tag": "0004_reusable_retired_registration",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788279619847,
+      "tag": "0005_occurrence_overrides",
+      "breakpoints": true
     }
   ]
 }

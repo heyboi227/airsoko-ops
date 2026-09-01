@@ -43,10 +43,10 @@ export function PhasePlaceholder() {
           {item.summary}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Phase 0 delivers the foundations only: the schema, the mutation pipeline, role-based
-          access, and Airports end to end. Airports &amp; Routes is the one section with working
-          screens — it exists to prove the architecture before anything complicated depends on
-          it.
+          Built so far: the schema and the mutation pipeline, role-based access, Airports &amp;
+          Routes, the Fleet and its amenities, and the Flight Schedule. Everything above arrives
+          in the phase named beside it, and this page exists so that a gap reads as a gap rather
+          than as a screen that does not work.
         </Typography>
       </Paper>
     </Box>

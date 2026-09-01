@@ -12,8 +12,11 @@ import { amenitiesRouter } from "./routes/amenities.routes.ts";
 import { analyticsRouter } from "./routes/analytics.routes.ts";
 import { auditRouter } from "./routes/audit.routes.ts";
 import { fleetRouter } from "./routes/fleet.routes.ts";
+import { flightsRouter } from "./routes/flights.routes.ts";
+import { schedulesRouter } from "./routes/schedules.routes.ts";
 import { healthRouter } from "./routes/health.routes.ts";
 import { liveRouter } from "./routes/live.routes.ts";
+import { networkRouter } from "./routes/network.routes.ts";
 
 export function createApp(): Express {
   const app = express();
@@ -52,6 +55,9 @@ export function createApp(): Express {
   app.use("/api/amenities", amenitiesRouter);
   app.use("/api/analytics", analyticsRouter);
   app.use("/api/aircraft", fleetRouter);
+  app.use("/api/flights", flightsRouter);
+  app.use("/api/schedules", schedulesRouter);
+  app.use("/api/routes", networkRouter);
   app.use("/api/audit", auditRouter);
   app.use("/api/live-operations", liveRouter);
 

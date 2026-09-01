@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  booleanFlagSchema,
   iataAirportCodeSchema,
   icaoAirportCodeSchema,
   ianaTimeZoneSchema,
@@ -77,8 +78,8 @@ export const airportQuerySchema = paginationSchema.extend({
   /** Matches IATA, ICAO, name or city, case-insensitively. */
   search: z.string().trim().max(120).optional(),
   countryCode: countrySchema.shape.code.optional(),
-  hubsOnly: z.coerce.boolean().optional(),
-  includeInactive: z.coerce.boolean().default(false),
+  hubsOnly: booleanFlagSchema.optional(),
+  includeInactive: booleanFlagSchema.default(false),
   sort: z.enum(["iataCode", "name", "city", "countryCode"]).default("iataCode"),
   direction: z.enum(["asc", "desc"]).default("asc"),
 });

@@ -40,9 +40,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: "/flights",
     label: "Flight Schedule",
     permission: "flight:read",
-    arrivesInPhase: 3,
-    summary:
-      "Flight list and calendar, the flight-control detail page, recurring schedules with per-occurrence overrides, and the conflict checks that guard every change.",
+    arrivesInPhase: null,
+    summary: "",
   },
   {
     path: "/fleet",

@@ -320,10 +320,22 @@ export async function seedNetwork(
     )
     .onConflictDoUpdate({
       target: recurringSchedules.id,
+      // The seed owns every column on a row it generated -- the same rule the
+      // flight upsert below states, and for the same reason. An earlier version
+      // updated only the times, so a season shortened by a "this and future"
+      // edit survived a reseed and the pattern no longer matched the plan it
+      // came from.
       set: {
+        routeId: sql`excluded.route_id`,
+        validFrom: sql`excluded.valid_from`,
+        validTo: sql`excluded.valid_to`,
         departureLocalTime: sql`excluded.departure_local_time`,
         arrivalLocalTime: sql`excluded.arrival_local_time`,
+        arrivalDayOffset: sql`excluded.arrival_day_offset`,
         operatingDays: sql`excluded.operating_days`,
+        aircraftTypeId: sql`excluded.aircraft_type_id`,
+        season: sql`excluded.season`,
+        active: sql`excluded.active`,
         updatedAt: SEED_EPOCH,
       },
     });

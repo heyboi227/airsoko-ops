@@ -1,7 +1,7 @@
 import { test } from "@playwright/test";
 
 /**
- * Scenarios A to F from section 19 of the brief.
+ * The scenarios from section 19 of the brief that are still outstanding.
  *
  * Committed from Phase 0 and marked `fixme` until the phase that builds them.
  * They appear in every test report as outstanding, which is the point: the
@@ -10,22 +10,12 @@ import { test } from "@playwright/test";
  *
  * Each one carries the assertion it will make, so removing the `fixme` is
  * filling in a body rather than rediscovering the requirement.
+ *
+ * Scenario A and Scenario C left this file in Phase 3. They are now executable
+ * specifications in `flights.api.spec.ts` and `schedules.api.spec.ts`, and
+ * Scenario E's UI half in `flights.ui.spec.ts`. Removing a `fixme` is how a
+ * phase gate is claimed, and these are the ones Phase 3 claimed.
  */
-
-test.describe("Scenario A: aircraft reassignment (Phase 3)", () => {
-  test.fixme("checks availability, overlap, turnaround, range, capacity and ratings", async () => {
-    // Reassign a flight from one registration to another via
-    //   POST /api/flights/:id/aircraft { aircraftId, mutation: { preview: true } }
-    // Expect the preview to carry findings for each rule that applies, then
-    // apply and assert the flight, the fleet schedule, the inventory summary,
-    // the alert feed and the audit trail all reflect the new airframe.
-  });
-
-  test.fixme("an accepted change reaches the live map", async () => {
-    // GET /api/live-operations must report the new registration and type for
-    // the flight within one telemetry tick.
-  });
-});
 
 test.describe("Scenario B: flight cancellation (Phase 7)", () => {
   test.fixme("the confirmation states the consequences before anything happens", async () => {
@@ -38,19 +28,6 @@ test.describe("Scenario B: flight cancellation (Phase 7)", () => {
     // After applying: the flight leaves active-map tracking, its bookings are
     // marked disrupted, its crew assignments are released, an alert exists,
     // analytics no longer count it as operating, and an audit entry records it.
-  });
-});
-
-test.describe("Scenario C: recurring schedule exception (Phase 3)", () => {
-  test.fixme("editing one occurrence leaves the rest of the series alone", async () => {
-    // Create a weekly service over four weeks, edit the second occurrence's
-    // departure time with scope "this occurrence", and assert the other three
-    // are untouched and the pattern itself is unchanged.
-  });
-
-  test.fixme("a broader scope changes this and future occurrences only", async () => {
-    // Same edit with scope "this and future" must leave occurrence one alone
-    // and change two, three and four.
   });
 });
 
@@ -81,7 +58,12 @@ test.describe("Scenario E: live flight selection (Phase 4)", () => {
   });
 });
 
-test.describe("Scenario F: capacity reduction (Phase 3, held at Phase 6)", () => {
+test.describe("Scenario F: capacity reduction (raised in Phase 3, held at Phase 6)", () => {
+  // The rule exists and is unit-tested: `evaluateAircraftAssignment` raises
+  // AIRCRAFT_CAPACITY_BELOW_SOLD and AIRCRAFT_CABIN_CAPACITY_BELOW_SOLD, and
+  // POST /api/flights/:id/aircraft already reads `soldByCabin` on every call.
+  // What is missing is a booking to sell a seat, so the figure is always zero
+  // and the finding can never fire. Phase 6 supplies the data, not the rule.
   test.fixme("a smaller aircraft below seats sold raises a critical finding", async () => {
     // AIRCRAFT_CAPACITY_BELOW_SOLD, blocking, naming the affected cabins and
     // the shortfall per cabin -- not just a total.

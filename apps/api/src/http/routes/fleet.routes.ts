@@ -4,6 +4,7 @@ import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   aircraftServiceabilitySchema,
+  booleanFlagSchema,
   cabinClassSchema,
   idSchema,
   mutationOptionsSchema,
@@ -57,7 +58,7 @@ const fleetQuerySchema = z.object({
   typeCode: z.string().trim().max(4).optional(),
   state: z.enum(["airborne", "turnaround", "on_ground", "unavailable"]).optional(),
   /** Only airframes with a check approaching or overdue. */
-  maintenanceDue: z.coerce.boolean().optional(),
+  maintenanceDue: booleanFlagSchema.optional(),
 });
 
 fleetRouter.get("/", requireAuth, requirePermission("aircraft:read"), async (req, res) => {

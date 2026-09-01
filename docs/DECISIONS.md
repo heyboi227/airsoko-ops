@@ -440,6 +440,13 @@ Manufacturer serials are never reused.
 now. Fare-product scope waits for Phase 6, when fare products exist to attach to,
 and flight scope for Phase 3.
 
+**Flight scope arrived in Phase 3, as promised.** It is made on the flight's own
+page rather than from the amenities catalogue: an exclusion for one dated sector
+is a decision an operator takes while looking at that sector, and offering "pick
+a flight" from the catalogue would be a picker over eight hundred rows to reach a
+screen they came from. Fare-product scope is still deferred, and the UI still
+says so.
+
 An earlier note in `docs/STATE.md` deferred all four to Phase 6 on the grounds
 that assignments "need fare products". That was true of one scope out of four and
 wrong about the rest — the correction is recorded here rather than quietly fixed,
@@ -555,3 +562,118 @@ Belgrade and one at Niš, and the form says exactly that.
 None of this is a write path. The same Zod schema and the same kernel rules run on
 save, `AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET` still fires on a genuine one-off, and
 the audit entry records what the operator submitted — never what the fleet suggested.
+
+---
+
+## 27. An occurrence's exception is recorded by field, and "this and future" splits the season
+
+**Decided.** `flight_instances.overridden_fields` is a `text[]` of the fields a dated
+flight now carries independently of the pattern that produced it. Migration `0005`.
+
+Scenario C asks for an edit to reach "this occurrence, this and future occurrences, or
+the entire series", and for the narrow edit not to be undone by a later broad one. That
+needs the flight to remember _what_ diverged, not merely that something did. A single
+`is_exception` flag would freeze a flight the first time anyone touched anything about
+it: a series retiming would then skip an occurrence whose only difference was a gate.
+Storing the field names lets a time change reach a gate exception and leave a time
+exception alone, which is what an operator means by both.
+
+**"This and future" splits the pattern rather than rewriting it.** The occurrences
+already produced came from a schedule that really did say 07:45; editing that row in
+place would leave the record disagreeing with the flights it generated. So the old
+pattern's season is shortened to the day before the split, a new pattern carries the new
+times from that date, and the occurrences in scope are re-pointed at it. Two rows is
+also what a real timetable looks like after a mid-season change.
+
+**One planner, two callers.** `planSeriesEdit` decides what an edit reaches, and both
+the flight-level "this and future" and the pattern-level edit go through it. The rule
+that history is never rewritten, that exceptions survive, and that anything out of scope
+is untouched is therefore written once.
+
+---
+
+## 28. Instants leave the database as ISO 8601, and the conversion belongs to the column
+
+**Decided.** `instant` in `apps/api/src/db/schema/common.ts` is a drizzle `customType`
+whose `fromDriver` normalises Postgres's wire format to ISO 8601 in UTC.
+
+`primitives.ts` has said since Phase 0 that "instants are ISO 8601 with an explicit
+offset, always serialised in UTC". They were not. Postgres sends
+`2026-09-01 03:30:00+00` -- a space where ISO has a `T`, and a two-digit offset -- and
+every response since Phase 0 carried that string through untouched. V8 parses it by
+leniency, which is why nothing caught it; `instantSchema` does not, and neither do other
+engines. Phase 3 made it unmissable, because a flight is six timestamps and one of them
+computed in the API came back ISO while the same field read from a row did not.
+
+**It cannot be fixed with `pg.types.setTypeParser`.** Drizzle overrides the driver's
+parsers per query to guarantee its own string mode, so a parser registered on the pool
+never runs. Two such calls sat in `db/client.ts` from Phase 0 and did nothing at all.
+The conversion has to be on the column, which is also the right place: every table gets
+it, and a value that has been through the database is now byte-identical to one just
+computed by the kernel.
+
+One aggregate escapes it -- `min(scheduled_departure)` in the schedule list is an
+expression rather than a column -- and is formatted in SQL instead, with a note saying
+why.
+
+---
+
+## 29. Two Phase 2 rules were wrong in ways only Phase 3 could show
+
+**Recorded, because the pattern is worth not repeating.** Both were unit-tested, both
+were correct against every fixture they had, and both failed the moment real data ran
+through them.
+
+**Repositioning was checked against every commitment, not the adjacent ones.**
+`evaluateAircraftAssignment` compared the sector to each of the airframe's other flights
+pairwise, so a tail flying an ordinary day raised "cannot be in two places" against its
+own sectors eighteen hours away. The consequence was total: no aircraft in a rotation
+could be assigned to anything, which is to say Scenario A was impossible. Only the last
+flight before and the first flight after decide where the aeroplane is; everything else
+is downstream of those two. Overlap detection still runs across all of them, because an
+overlap anywhere is an overlap.
+
+Phase 2 could not have caught it. Its tests pass one or two commitments, which is what a
+hand-written fixture looks like; the failure needs a tail with five sectors, which is
+what a seeded operating day looks like.
+
+**A retimed flight kept a delay measured against the old timetable.** Moving a
+schedule left `estimated_departure` where it was, so a flight retimed from 05:30 to
+07:00 reported an estimate of 06:26 -- earlier than its own scheduled time, which is not
+"early", it is a stale number. `shiftEstimates` carries the delay onto the new times
+instead: same minutes late, against the new schedule. The delay is a fact about the
+operation and survives a plan change; the instant it was expressed against does not.
+
+---
+
+## 30. Which dates exist is a decision, not a side effect
+
+**Decided.** Filing the dated occurrences of a pattern is its own endpoint,
+`POST /api/schedules/:id/generate`, with an explicit window.
+
+A season runs from March to October while an operations board holds a week of it. An
+edit that also materialised every unfilled date would answer a question nobody asked --
+with two hundred flights. So `planSeriesEdit` takes `createMissing`, a retiming passes
+`false`, and a pattern edit that widens the operating days fills only inside the span of
+occurrences already on file: adding Saturday puts Saturdays beside the days that are
+already there.
+
+The same reasoning gives schedules a delete. Filing a pattern with no way to remove one
+is the trap decision 23 names for aircraft registrations -- a mistyped flight number
+would otherwise be permanent. It is refused once anything the pattern produced has
+operated, because the timetable a flown sector came from is a fact about that sector.
+
+---
+
+## 31. A curfew is a policy threshold, not airport data
+
+**Decided.** `policy.curfew` holds one demonstration quiet period, applied to
+outstations, and `SCHEDULE_AIRPORT_RESTRICTION` warns when a movement falls inside it.
+
+The code had existed since Phase 0 with nothing behind it. Real curfews are per-airport
+and legally defined, and none of them is in the OurAirports extract -- authoring a column
+of them would be inventing data that ought to be sourced, which decision 13 exists to
+prevent. A single threshold in the policy, disclaimed like every other number there, is
+the honest version: it makes the rule fire, it is configurable for demonstration, and it
+claims no authority the system does not have. That is also why it warns rather than
+blocks.

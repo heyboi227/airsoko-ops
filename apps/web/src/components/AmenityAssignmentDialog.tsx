@@ -27,8 +27,14 @@ import { MutationConfirmDialog } from "./MutationConfirmDialog.tsx";
 /**
  * Assigning, or withdrawing, one amenity.
  *
- * Only aircraft and cabin scope are offered. Fare-product scope waits for
- * Phase 6, when fare products exist to attach to, and flight scope for Phase 3.
+ * Only aircraft and cabin scope are offered here. Fare-product scope waits for
+ * Phase 6, when fare products exist to attach to.
+ *
+ * Flight scope arrived with Phase 3 but is not on this dialog, deliberately: an
+ * exclusion for one dated sector is made on that flight, where the operator can
+ * see which cabins it reaches and what it overrides. Offering "pick a flight"
+ * from the amenities catalogue would be a picker over eight hundred rows to
+ * reach a screen they came from.
  * Both are modelled and both resolve correctly already — what is missing is the
  * thing to point at. The dialog says so instead of showing two controls that
  * would open empty lists.

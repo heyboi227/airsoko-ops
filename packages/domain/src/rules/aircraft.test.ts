@@ -395,3 +395,85 @@ describe("withdrawing an aircraft", () => {
     expect(result.consequences.map((c) => c.kind)).toContain("aircraft_released");
   });
 });
+describe("only the adjacent sectors decide where the aircraft is", () => {
+  // The rotation SO310 flew before this phase existed: a normal operating day
+  // for one tail. Assigning it to a sector inside its own chain must reason
+  // about the flight either side, not about every flight it happens to fly.
+  it("ignores commitments that are not next to the sector", () => {
+    const evaluation = evaluateAircraftAssignment(
+      narrowBody(),
+      sector({
+        originIata: "BEG",
+        destinationIata: "VIE",
+        origin: BEG,
+        destination: VIE,
+        scheduledDeparture: "2026-08-30T08:00:00.000Z",
+        scheduledArrival: "2026-08-30T09:05:00.000Z",
+      }),
+      context({
+        commitments: [
+          // Yesterday evening, ending far away. Irrelevant: the sector before
+          // this one already brought the aircraft to BEG.
+          {
+            flightId: "aaaaaaaa-0000-5000-8000-000000000001",
+            flightNumber: "SO901",
+            originIata: "BEG",
+            destinationIata: "ATH",
+            departure: "2026-08-29T16:00:00.000Z",
+            arrival: "2026-08-29T18:00:00.000Z",
+          },
+          {
+            flightId: "aaaaaaaa-0000-5000-8000-000000000002",
+            flightNumber: "SO902",
+            originIata: "ATH",
+            destinationIata: "BEG",
+            departure: "2026-08-30T05:00:00.000Z",
+            arrival: "2026-08-30T07:00:00.000Z",
+          },
+          // Tomorrow, from VIE, which is where this sector leaves it.
+          {
+            flightId: "aaaaaaaa-0000-5000-8000-000000000003",
+            flightNumber: "SO903",
+            originIata: "VIE",
+            destinationIata: "BEG",
+            departure: "2026-08-30T10:30:00.000Z",
+            arrival: "2026-08-30T11:35:00.000Z",
+          },
+          {
+            flightId: "aaaaaaaa-0000-5000-8000-000000000004",
+            flightNumber: "SO904",
+            originIata: "BEG",
+            destinationIata: "ATH",
+            departure: "2026-08-30T14:00:00.000Z",
+            arrival: "2026-08-30T16:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(evaluation.findings).toEqual([]);
+  });
+
+  it("still catches an overlap anywhere in the window", () => {
+    const evaluation = evaluateAircraftAssignment(
+      narrowBody(),
+      sector(),
+      context({
+        commitments: [
+          {
+            flightId: "aaaaaaaa-0000-5000-8000-000000000005",
+            flightNumber: "SO905",
+            originIata: "BEG",
+            destinationIata: "ATH",
+            departure: "2026-08-30T08:30:00.000Z",
+            arrival: "2026-08-30T10:30:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(evaluation.findings.map((finding) => finding.code)).toContain(
+      "AIRCRAFT_OVERLAPPING_ASSIGNMENT",
+    );
+  });
+});

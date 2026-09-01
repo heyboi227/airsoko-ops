@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, jsonb, pgTable, text, uuid } from "drizzle-orm/pg-core";
 import { instant } from "./common.ts";
 import { alertSeverityEnum, alertStatusEnum, resourceKindEnum } from "./enums.ts";
@@ -12,7 +13,9 @@ export const auditEntries = pgTable(
   "audit_entries",
   {
     id: uuid("id").primaryKey(),
-    occurredAt: instant("occurred_at").notNull().defaultNow(),
+    occurredAt: instant("occurred_at")
+      .notNull()
+      .default(sql`now()`),
     actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
     /** Kept alongside the id so the trail survives a user being removed. */
     actorLabel: text("actor_label").notNull(),
@@ -45,7 +48,9 @@ export const operationalAlerts = pgTable(
   "operational_alerts",
   {
     id: uuid("id").primaryKey(),
-    raisedAt: instant("raised_at").notNull().defaultNow(),
+    raisedAt: instant("raised_at")
+      .notNull()
+      .default(sql`now()`),
     severity: alertSeverityEnum("severity").notNull(),
     status: alertStatusEnum("status").notNull().default("open"),
     /** The rule code that produced it, when a rule did. */

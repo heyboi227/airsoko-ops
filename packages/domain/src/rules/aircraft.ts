@@ -3,7 +3,7 @@ import { SERVICEABILITY_LABELS, UNSERVICEABLE } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
-import { gapMinutes, intervalsOverlap, minutesBetween } from "../time.ts";
+import { epochMs, gapMinutes, intervalsOverlap, minutesBetween } from "../time.ts";
 import { maintenanceStanding, type MaintenanceLimits } from "../fleet.ts";
 import type { OperationalPolicy } from "../policy.ts";
 
@@ -46,6 +46,11 @@ export interface SectorToFly {
   scheduledArrival: Instant;
   /** Seats already sold, by cabin. Empty until bookings exist in Phase 6. */
   soldByCabin: Readonly<Record<string, number>>;
+  /**
+   * The type the recurring schedule plans this sector on, when it came from
+   * one. Absent for an ad-hoc flight, which is planned on nothing.
+   */
+  plannedTypeCode?: string;
 }
 
 /** Another sector the same airframe is already committed to. */
@@ -98,40 +103,73 @@ export function evaluateAircraftAssignment(
   // --- Is it already busy? -------------------------------------------------
   const sectorWindow = { start: sector.scheduledDeparture, end: sector.scheduledArrival };
 
+  const overlapping: ExistingCommitment[] = [];
+  const clear: ExistingCommitment[] = [];
+
   for (const commitment of context.commitments) {
-    const commitmentWindow = { start: commitment.departure, end: commitment.arrival };
-
-    if (intervalsOverlap(sectorWindow, commitmentWindow)) {
-      builder.add(
-        blocking(
-          "AIRCRAFT_OVERLAPPING_ASSIGNMENT",
-          `Already flying ${commitment.flightNumber}`,
-          `${aircraft.registration} is committed to ${commitment.flightNumber} (${commitment.originIata}-${commitment.destinationIata}) between ${commitment.departure.slice(11, 16)}Z and ${commitment.arrival.slice(11, 16)}Z, which overlaps ${sector.flightNumber}.`,
-          {
-            subject,
-            related: [resourceRef("flight", commitment.flightId, commitment.flightNumber)],
-          },
-        ),
-      );
-      continue;
+    if (
+      intervalsOverlap(sectorWindow, { start: commitment.departure, end: commitment.arrival })
+    ) {
+      overlapping.push(commitment);
+    } else {
+      clear.push(commitment);
     }
+  }
 
-    // Touching intervals are not an overlap -- they are a turnaround question,
-    // which is a different finding with a different fix.
-    const before = epochOrder(commitment.arrival, sector.scheduledDeparture);
-    const gap = before
+  for (const commitment of overlapping) {
+    builder.add(
+      blocking(
+        "AIRCRAFT_OVERLAPPING_ASSIGNMENT",
+        `Already flying ${commitment.flightNumber}`,
+        `${aircraft.registration} is committed to ${commitment.flightNumber} (${commitment.originIata}-${commitment.destinationIata}) between ${commitment.departure.slice(11, 16)}Z and ${commitment.arrival.slice(11, 16)}Z, which overlaps ${sector.flightNumber}.`,
+        {
+          subject,
+          related: [resourceRef("flight", commitment.flightId, commitment.flightNumber)],
+        },
+      ),
+    );
+  }
+
+  // Touching intervals are not an overlap -- they are a turnaround question,
+  // which is a different finding with a different fix.
+  //
+  // Only the two *adjacent* sectors can answer it. An earlier version compared
+  // the new sector against every commitment in the window, which meant a tail
+  // flying a normal day raised "cannot be in two places" against each of its
+  // own sectors eighteen hours away -- and no aircraft in a rotation could ever
+  // be assigned to anything. Where the aeroplane is when this sector starts is
+  // decided by the last flight before it, and where it needs to be afterwards
+  // by the first flight after it; everything else is downstream of those two.
+  const before = clear
+    .filter((commitment) => epochOrder(commitment.arrival, sector.scheduledDeparture))
+    .sort((a, b) => epochMs(a.arrival) - epochMs(b.arrival))
+    .at(-1);
+
+  const after = clear
+    .filter((commitment) => !epochOrder(commitment.arrival, sector.scheduledDeparture))
+    .sort((a, b) => epochMs(a.departure) - epochMs(b.departure))
+    .at(0);
+
+  for (const [commitment, isBefore] of [
+    [before, true],
+    [after, false],
+  ] as const) {
+    if (!commitment) continue;
+
+    const commitmentWindow = { start: commitment.departure, end: commitment.arrival };
+    const gap = isBefore
       ? gapMinutes(commitmentWindow, sectorWindow)
       : gapMinutes(sectorWindow, commitmentWindow);
 
-    const arrivesAt = before ? commitment.destinationIata : sector.destinationIata;
-    const departsFrom = before ? sector.originIata : commitment.originIata;
+    const arrivesAt = isBefore ? commitment.destinationIata : sector.destinationIata;
+    const departsFrom = isBefore ? sector.originIata : commitment.originIata;
 
     if (arrivesAt !== departsFrom) {
       builder.add(
         blocking(
           "AIRCRAFT_IMPOSSIBLE_REPOSITIONING",
           `Cannot be in two places`,
-          `${aircraft.registration} is at ${arrivesAt} after ${before ? commitment.flightNumber : sector.flightNumber}, but ${before ? sector.flightNumber : commitment.flightNumber} departs from ${departsFrom} ${Math.round(gap)} minutes later. Add a positioning sector or choose another airframe.`,
+          `${aircraft.registration} is at ${arrivesAt} after ${isBefore ? commitment.flightNumber : sector.flightNumber}, but ${isBefore ? sector.flightNumber : commitment.flightNumber} departs from ${departsFrom} ${Math.round(gap)} minutes later. Add a positioning sector or choose another airframe.`,
           {
             subject,
             related: [resourceRef("flight", commitment.flightId, commitment.flightNumber)],
@@ -236,6 +274,21 @@ export function evaluateAircraftAssignment(
         ),
       );
     }
+  }
+
+  // --- Is it the type the schedule was planned on? -------------------------
+  // A warning, never a block. Substituting an A319 for an A320 is an ordinary
+  // day's work; it is worth saying because capacity, crew complement and the
+  // published cabin all move with it.
+  if (sector.plannedTypeCode && sector.plannedTypeCode !== aircraft.typeCode) {
+    builder.add(
+      warning(
+        "AIRCRAFT_TYPE_MISMATCH_WITH_SCHEDULE",
+        `${sector.flightNumber} is planned on a ${sector.plannedTypeCode}`,
+        `${aircraft.registration} is a ${aircraft.typeCode}. The sector still operates, but its capacity becomes ${aircraft.seatCapacity} seats and the crew complement is worked out against the substitute rather than the plan.`,
+        { subject },
+      ),
+    );
   }
 
   // --- Is a check about to come due? ---------------------------------------

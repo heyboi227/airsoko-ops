@@ -8,9 +8,11 @@ Built against the brief in `docs/BRIEF.md`. Delivery is phased — see
 [`docs/STATE.md`](docs/STATE.md) for where it currently stands and
 [`docs/DECISIONS.md`](docs/DECISIONS.md) for why the architecture looks like this.
 
-**Phase 0 is complete.** The foundations are in place — schema, mutation pipeline,
-role-based access, and Airports end to end. Every other section says so plainly rather
-than showing a convincing mock.
+**Phase 3 is complete.** Working end to end: Airports & Routes, the Fleet and its
+amenities, and the Flight Schedule — the board, the fleet timeline, the flight-control
+page, recurring schedules with per-occurrence exceptions, and the conflict checks that
+guard every change. Live Operations, Crew, Bookings and the rest say which phase builds
+them rather than showing a convincing mock.
 
 ---
 

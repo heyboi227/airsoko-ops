@@ -16,6 +16,7 @@ import {
   aircraftCabins,
   amenities,
   amenityAssignments,
+  flightInstances,
   fareProducts,
 } from "../../db/schema/index.ts";
 import { actorOf, requireAuth, requirePermission } from "../auth.ts";
@@ -236,21 +237,29 @@ async function amenityLookup(codes?: string[]) {
 // --- Changing what is offered ------------------------------------------------
 
 /**
- * Assignments can be created at aircraft and cabin scope.
+ * Assignments can be created at aircraft, cabin and flight scope.
  *
- * Fare-product scope waits for Phase 6, when fare products exist to attach to,
- * and flight scope for Phase 3, when a flight can be picked. Both are modelled
- * and both resolve correctly today -- what is missing is the thing to point at,
- * not the mechanism. The UI says which, rather than offering a control that
- * would fail.
+ * Flight scope arrived with Phase 3, which is when there was a flight to point
+ * at. It is the mechanism the amenity model was built around: an airframe
+ * fitted with Wi-Fi that is unserviceable today is a flight-level exclusion,
+ * not an edit to the aircraft record -- decision 21.
+ *
+ * Fare-product scope still waits for Phase 6, for the same reason flight scope
+ * waited for Phase 3: it is modelled and it resolves correctly, but there is
+ * nothing yet to attach it to. The UI says so rather than offering a control
+ * that would open an empty list.
  */
+const EDITABLE_SCOPES = ["aircraft", "cabin", "flight"] as const;
+type EditableScope = (typeof EDITABLE_SCOPES)[number];
+
 const assignmentBodySchema = z
   .object({
     amenityId: z.uuid(),
-    scope: z.enum(["aircraft", "cabin"]),
+    scope: z.enum(EDITABLE_SCOPES),
     included: z.boolean(),
     aircraftId: z.uuid().optional(),
     cabinClass: cabinClassSchema.optional(),
+    flightInstanceId: z.uuid().optional(),
     note: z.string().trim().max(300).optional(),
   })
   .refine((body) => (body.scope === "aircraft" ? Boolean(body.aircraftId) : true), {
@@ -260,6 +269,10 @@ const assignmentBodySchema = z
   .refine((body) => (body.scope === "cabin" ? Boolean(body.cabinClass) : true), {
     message: "A cabin-scope assignment needs a cabin class.",
     path: ["cabinClass"],
+  })
+  .refine((body) => (body.scope === "flight" ? Boolean(body.flightInstanceId) : true), {
+    message: "A flight-scope assignment needs a flight.",
+    path: ["flightInstanceId"],
   });
 
 /**
@@ -267,15 +280,32 @@ const assignmentBodySchema = z
  *
  * An aircraft-scope row reaches that airframe's cabins. A cabin-scope row
  * reaches that class on every airframe that has one -- which is why the count
- * matters: "Economy" sounds like one thing and is twenty.
+ * matters: "Economy" sounds like one thing and is twenty. A flight-scope row
+ * reaches the cabins of whatever airframe is operating that sector, which may
+ * be none at all: a flight with no aircraft has no cabins for an amenity to
+ * apply to, and the rules then report that the change grants nothing.
  */
 async function reachableCabins(
-  scope: "aircraft" | "cabin",
+  scope: EditableScope,
   target: {
     aircraftId?: string | undefined;
     cabinClass?: CabinClass | undefined;
+    flightInstanceId?: string | undefined;
   },
 ) {
+  // A flight resolves to its assigned airframe, and from there to that
+  // airframe's cabins.
+  let aircraftId = target.aircraftId;
+  if (scope === "flight") {
+    const [flight] = await db
+      .select({ aircraftId: flightInstances.aircraftId })
+      .from(flightInstances)
+      .where(eq(flightInstances.id, target.flightInstanceId ?? ""))
+      .limit(1);
+    if (!flight?.aircraftId) return [];
+    aircraftId = flight.aircraftId;
+  }
+
   const rows = await db
     .select({
       aircraftId: aircraftCabins.aircraftId,
@@ -285,19 +315,24 @@ async function reachableCabins(
     .from(aircraftCabins)
     .innerJoin(aircraft, eq(aircraft.id, aircraftCabins.aircraftId))
     .where(
-      scope === "aircraft"
-        ? eq(aircraftCabins.aircraftId, target.aircraftId ?? "")
-        : eq(aircraftCabins.cabinClass, target.cabinClass ?? "economy"),
+      scope === "cabin"
+        ? eq(aircraftCabins.cabinClass, target.cabinClass ?? "economy")
+        : eq(aircraftCabins.aircraftId, aircraftId ?? ""),
     )
     .orderBy(aircraft.registration);
 
   return rows.map((row) => ({
     label:
-      scope === "aircraft"
-        ? CABIN_LABELS[row.cabinClass]
-        : `${row.registration} ${CABIN_LABELS[row.cabinClass]}`,
+      scope === "cabin"
+        ? `${row.registration} ${CABIN_LABELS[row.cabinClass]}`
+        : CABIN_LABELS[row.cabinClass],
     aircraftId: row.aircraftId,
     cabinClass: row.cabinClass,
+    // The resolver needs to know which flight it is resolving for, or a
+    // flight-scope row would never match the context it was written against.
+    ...(scope === "flight" && target.flightInstanceId
+      ? { flightInstanceId: target.flightInstanceId }
+      : {}),
   }));
 }
 
@@ -335,9 +370,19 @@ amenitiesRouter.post(
       if (!airframe) throw notFound(`Aircraft ${input.aircraftId}`);
     }
 
+    if (input.scope === "flight") {
+      const [flight] = await db
+        .select({ id: flightInstances.id })
+        .from(flightInstances)
+        .where(eq(flightInstances.id, input.flightInstanceId ?? ""))
+        .limit(1);
+      if (!flight) throw notFound(`Flight ${input.flightInstanceId}`);
+    }
+
     const affectedContexts = await reachableCabins(input.scope, {
       aircraftId: input.aircraftId,
       cabinClass: input.cabinClass,
+      flightInstanceId: input.flightInstanceId,
     });
 
     const id = randomUUID();
@@ -357,6 +402,7 @@ amenitiesRouter.post(
             included: input.included,
             aircraftId: input.aircraftId ?? null,
             cabinClass: input.cabinClass ?? null,
+            flightInstanceId: input.flightInstanceId ?? null,
             note: input.note ?? null,
           },
           { existing: await loadAssignments(tx), affectedContexts },
@@ -370,7 +416,7 @@ amenitiesRouter.post(
           aircraftId: input.aircraftId ?? null,
           cabinClass: input.cabinClass ?? null,
           fareProductId: null,
-          flightInstanceId: null,
+          flightInstanceId: input.flightInstanceId ?? null,
           note: input.note?.trim() || null,
           createdAt: now,
           updatedAt: now,
@@ -386,6 +432,7 @@ amenitiesRouter.post(
               included: input.included,
               aircraftId: input.aircraftId ?? null,
               cabinClass: input.cabinClass ?? null,
+              flightInstanceId: input.flightInstanceId ?? null,
               note: input.note ?? null,
             },
           },
@@ -428,6 +475,7 @@ amenitiesRouter.post(
         included: amenityAssignments.included,
         aircraftId: amenityAssignments.aircraftId,
         cabinClass: amenityAssignments.cabinClass,
+        flightInstanceId: amenityAssignments.flightInstanceId,
         note: amenityAssignments.note,
       })
       .from(amenityAssignments)
@@ -436,16 +484,17 @@ amenitiesRouter.post(
       .limit(1);
 
     if (!current) throw notFound(`Amenity assignment ${id}`);
-    if (current.scope !== "aircraft" && current.scope !== "cabin") {
+    if (!(EDITABLE_SCOPES as readonly string[]).includes(current.scope)) {
       throw new ApiProblem(
         "CONFLICT",
         `${current.amenityName} is assigned at ${current.scope.replace(/_/g, " ")} scope, which is edited in a later phase.`,
       );
     }
 
-    const affectedContexts = await reachableCabins(current.scope, {
+    const affectedContexts = await reachableCabins(current.scope as EditableScope, {
       aircraftId: current.aircraftId ?? undefined,
       cabinClass: current.cabinClass ?? undefined,
+      flightInstanceId: current.flightInstanceId ?? undefined,
     });
 
     const outcome = await runIntent({
@@ -478,6 +527,7 @@ amenitiesRouter.post(
               included: current.included,
               aircraftId: current.aircraftId,
               cabinClass: current.cabinClass,
+              flightInstanceId: current.flightInstanceId,
               note: current.note,
             },
           },

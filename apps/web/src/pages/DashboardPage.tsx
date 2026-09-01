@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   Divider,
   LinearProgress,
@@ -222,15 +223,24 @@ export function DashboardPage() {
         <Stack spacing={2}>
           {/* Anything needing a controller comes first, above the metrics. */}
           {flights.withoutAircraft > 0 || flights.cancelled > 0 ? (
-            <Alert severity={flights.withoutAircraft > 0 ? "warning" : "info"}>
+            <Alert
+              severity={flights.withoutAircraft > 0 ? "warning" : "info"}
+              action={
+                flights.withoutAircraft > 0 ? (
+                  <Button size="small" component={RouterLink} to="/flights?unassignedOnly=1">
+                    Solve them
+                  </Button>
+                ) : null
+              }
+            >
               {flights.withoutAircraft > 0 ? (
                 <>
                   <strong>
                     {flights.withoutAircraft} flight{flights.withoutAircraft === 1 ? "" : "s"}{" "}
                     today without an aircraft.
                   </strong>{" "}
-                  No airframe of the required type was free at the origin. Aircraft assignment
-                  arrives in Phase 3.
+                  No airframe of the required type was free at the origin. Each one needs an
+                  airframe allocating before it can operate.
                 </>
               ) : (
                 <>

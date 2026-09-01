@@ -84,6 +84,18 @@ export const ianaTimeZoneSchema = z.string().refine(
   { message: "Expected an IANA time zone such as Europe/Belgrade" },
 );
 
+/**
+ * A boolean carried in a query string.
+ *
+ * Not `z.coerce.boolean()`: that is `Boolean(value)`, so the string "false"
+ * coerces to `true` and a filter turned off in the UI arrives at the API
+ * turned on. Query parameters are text, and the only honest reading of that
+ * text is an explicit one.
+ */
+export const booleanFlagSchema = z
+  .enum(["true", "false", "1", "0"])
+  .transform((value) => value === "true" || value === "1");
+
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),

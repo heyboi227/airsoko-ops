@@ -11,7 +11,13 @@ import { instantSchema, localDateSchema } from "./primitives.ts";
  * what is missing and which phase supplies it.
  */
 
-export const flightSummarySchema = z.object({
+/**
+ * Flights on the day, counted by status.
+ *
+ * Named for what it holds rather than for the entity it counts: `FlightSummary`
+ * is a flight, and this is a tally of them.
+ */
+export const flightStatusCountsSchema = z.object({
   total: z.number().int(),
   scheduled: z.number().int(),
   checkInOpen: z.number().int(),
@@ -33,7 +39,7 @@ export const flightSummarySchema = z.object({
   /** Flights with no airframe allocated. Each one needs a controller. */
   withoutAircraft: z.number().int(),
 });
-export type FlightSummary = z.infer<typeof flightSummarySchema>;
+export type FlightStatusCounts = z.infer<typeof flightStatusCountsSchema>;
 
 export const fleetSummarySchema = z.object({
   total: z.number().int(),
@@ -90,7 +96,7 @@ export const dashboardSchema = z.object({
   hubIataCode: z.string(),
   hubTimeZone: z.string(),
 
-  flights: flightSummarySchema,
+  flights: flightStatusCountsSchema,
   fleet: fleetSummarySchema,
   movements: z.array(movementSchema),
   routes: z.array(routePerformanceSchema),

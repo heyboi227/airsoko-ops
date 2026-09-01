@@ -4,15 +4,12 @@ import { env } from "../env.ts";
 import * as schema from "./schema/index.ts";
 
 /**
- * `timestamptz` columns come back as strings rather than JS Date objects.
+ * Instants are handled by the schema's own `instant` column type, not here.
  *
- * node-postgres parses type 1184 into a Date by default, which re-introduces
- * exactly the ambiguity this codebase spends effort avoiding: a Date carries
- * the host's zone into every serialisation. Keeping the ISO string means an
- * instant stays an instant from Postgres to the browser.
+ * Drizzle overrides the driver's type parsers per query to guarantee its
+ * string mode, so `pg.types.setTypeParser(1184, ...)` never runs. Two such
+ * calls used to sit here and did nothing at all. See `db/schema/common.ts`.
  */
-pg.types.setTypeParser(1184, (value) => value);
-pg.types.setTypeParser(1114, (value) => value);
 /** numeric -> string by default; we want numbers for money and distances. */
 pg.types.setTypeParser(1700, (value) => Number(value));
 

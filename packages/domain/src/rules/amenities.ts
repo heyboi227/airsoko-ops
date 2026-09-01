@@ -22,6 +22,9 @@ export interface AmenityAssignmentDraft {
   included: boolean;
   aircraftId?: Id | null | undefined;
   cabinClass?: CabinClass | null | undefined;
+  flightInstanceId?: Id | null | undefined;
+  /** Modelled for Phase 6; nothing creates one yet. */
+  fareProductId?: Id | null | undefined;
   note?: string | null | undefined;
 }
 
@@ -38,13 +41,27 @@ function listLabels(labels: readonly string[]): string {
   return `${labels.slice(0, 3).join(", ")} and ${labels.length - 3} more`;
 }
 
-/** Does this assignment target the same thing the draft does? */
+/**
+ * Does this assignment target the same thing the draft does?
+ *
+ * Same scope, same amenity, same thing pointed at. Which column identifies
+ * "the same thing" depends on the scope, which is why this is a switch rather
+ * than a comparison of every field: a cabin-scope row has no aircraft, and
+ * comparing nulls would make two unrelated rows look identical.
+ */
 function sameTarget(assignment: AmenityAssignment, draft: AmenityAssignmentDraft): boolean {
   if (assignment.scope !== draft.scope) return false;
   if (assignment.amenityCode !== draft.amenityCode) return false;
-  return draft.scope === "aircraft"
-    ? assignment.aircraftId === draft.aircraftId
-    : assignment.cabinClass === draft.cabinClass;
+  switch (draft.scope) {
+    case "aircraft":
+      return assignment.aircraftId === draft.aircraftId;
+    case "flight":
+      return assignment.flightInstanceId === draft.flightInstanceId;
+    case "fare_product":
+      return assignment.fareProductId === draft.fareProductId;
+    default:
+      return assignment.cabinClass === draft.cabinClass;
+  }
 }
 
 export function evaluateAmenityAssignment(
@@ -98,8 +115,8 @@ export function evaluateAmenityAssignment(
       note: draft.note ?? null,
       aircraftId: draft.aircraftId ?? null,
       cabinClass: draft.cabinClass ?? null,
-      fareProductId: null,
-      flightInstanceId: null,
+      fareProductId: draft.fareProductId ?? null,
+      flightInstanceId: draft.flightInstanceId ?? null,
     },
   ];
 

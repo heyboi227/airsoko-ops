@@ -9,6 +9,9 @@ import { AirportsPage } from "./pages/AirportsPage.tsx";
 import { AmenitiesPage } from "./pages/AmenitiesPage.tsx";
 import { DashboardPage } from "./pages/DashboardPage.tsx";
 import { FleetPage } from "./pages/FleetPage.tsx";
+import { FlightsPage } from "./pages/FlightsPage.tsx";
+import { FlightDetailPage } from "./pages/FlightDetailPage.tsx";
+import { SchedulesPage } from "./pages/SchedulesPage.tsx";
 import { PhasePlaceholder } from "./pages/PhasePlaceholder.tsx";
 import { NAV_ITEMS } from "./shell/navigation.ts";
 
@@ -59,6 +62,11 @@ export function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/network" element={<AirportsPage />} />
             <Route path="/fleet" element={<FleetPage />} />
+            {/* The static segment is declared first for a human reader;
+                React Router ranks it above the dynamic one either way. */}
+            <Route path="/flights/schedules" element={<SchedulesPage />} />
+            <Route path="/flights/:id" element={<FlightDetailPage />} />
+            <Route path="/flights" element={<FlightsPage />} />
             <Route path="/amenities" element={<AmenitiesPage />} />
             {/* Everything still to be built gets an honest placeholder; a section
                 with no phase left to arrive in has a route above. */}

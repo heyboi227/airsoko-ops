@@ -16,7 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { MutationPreview, RuleCode, RuleFinding } from "@airsoko/contracts";
 
 /**
@@ -36,8 +36,14 @@ import type { MutationPreview, RuleCode, RuleFinding } from "@airsoko/contracts"
 export interface MutationConfirmDialogProps {
   open: boolean;
   title: string;
-  /** What the operator asked to do, in plain words. */
-  intentDescription: string;
+  /**
+   * What the operator asked to do, in plain words.
+   *
+   * A node rather than a string: several of these descriptions name a flight
+   * and a registration, and marking those up is worth more than keeping the
+   * prop primitive.
+   */
+  intentDescription: ReactNode;
   preview: MutationPreview | null;
   loading: boolean;
   /** Set when the server refused outright. */

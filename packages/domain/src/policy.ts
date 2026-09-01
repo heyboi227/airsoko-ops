@@ -68,6 +68,25 @@ export interface DelayPolicy {
   significantMinutes: number;
 }
 
+/**
+ * Night restrictions at a station.
+ *
+ * Real curfews are per-airport, legally defined, and none of them is in our
+ * airport reference -- inventing a column of them would be authoring data that
+ * ought to be sourced, which decision 13 exists to prevent. What is honest is a
+ * single demonstration threshold, stated as policy and disclaimed like every
+ * other number here, so that `SCHEDULE_AIRPORT_RESTRICTION` is a rule that
+ * fires rather than a code with nothing behind it.
+ */
+export interface CurfewPolicy {
+  /** Airport-local wall clock the quiet period starts at. */
+  quietFromLocalTime: string;
+  /** Airport-local wall clock it ends at. Earlier than the start: it wraps midnight. */
+  quietToLocalTime: string;
+  /** Hubs run their own night operation; the restriction is about outstations. */
+  appliesToHubs: boolean;
+}
+
 export interface InventoryPolicy {
   /** Seats held back from sale per cabin, for operational moves. */
   blockedSeatsPerCabin: Readonly<Record<CabinClass, number>>;
@@ -80,6 +99,7 @@ export interface OperationalPolicy {
   maintenance: MaintenancePolicy;
   range: RangePolicy;
   delay: DelayPolicy;
+  curfew: CurfewPolicy;
   inventory: InventoryPolicy;
   /** Shown wherever a limit is displayed. Do not remove. */
   disclaimer: string;
@@ -119,6 +139,11 @@ export const DEFAULT_POLICY: OperationalPolicy = {
     thresholdMinutes: 15,
     significantMinutes: 60,
   },
+  curfew: {
+    quietFromLocalTime: "23:30",
+    quietToLocalTime: "05:30",
+    appliesToHubs: false,
+  },
   inventory: {
     blockedSeatsPerCabin: { business: 1, premium_economy: 2, economy: 4 },
   },
@@ -140,6 +165,7 @@ export function withPolicyOverrides(
     maintenance: { ...DEFAULT_POLICY.maintenance, ...overrides.maintenance },
     range: { ...DEFAULT_POLICY.range, ...overrides.range },
     delay: { ...DEFAULT_POLICY.delay, ...overrides.delay },
+    curfew: { ...DEFAULT_POLICY.curfew, ...overrides.curfew },
     inventory: { ...DEFAULT_POLICY.inventory, ...overrides.inventory },
   };
 }

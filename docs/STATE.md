@@ -2,94 +2,117 @@
 
 Where the build currently stands. Updated at the end of every phase.
 
-**Phase 2 — complete.** Next: Phase 3 (Flight schedule).
+**Phase 3 — complete.** Next: Phase 4 (Live Operations).
 
 ---
 
-## What Phase 2 delivered
+## What Phase 3 delivered
 
-**Gate:** an unavailable aircraft is not silently assignable; capacity derives from the
-cabin configuration and is never stored twice. **Met** — pinned by acceptance tests at
-both the API and the browser.
+**Gate:** a conflicting change is refused with a precise reason, and nothing invalid is
+persisted. **Met** — pinned by acceptance tests at both the API and the browser.
 
-| Area                                                         | Status                     |
-| ------------------------------------------------------------ | -------------------------- |
-| Serviceability split from operational state                  | Done, migration `0003`     |
-| `deriveFleetState` — position, state, rotation, from flights | Done, pure                 |
-| `evaluateAircraftAssignment` — the Phase 3 assignment gate   | Done, 20 unit tests        |
-| Registering an airframe with its cabins                      | Done, 20 unit tests        |
-| Cabin autofill from the tails already flying the type        | Done, decision 26          |
-| Retiring an airframe                                         | Done, migration `0004`     |
-| Maintenance standing across calendar / hours / cycles        | Done, 96 events seeded     |
-| Amenity resolution across four scopes                        | Done, 11 unit tests        |
-| Amenity assignment at aircraft and cabin scope               | Done, 11 unit tests        |
-| Fleet list with derived state and URL-backed filters         | Done                       |
-| Aircraft profile drawer, incl. serviceability change         | Done, through the pipeline |
-| Amenities page with the per-cabin resolution matrix          | Done                       |
+| Area                                                            | Status                             |
+| --------------------------------------------------------------- | ---------------------------------- |
+| Flight board, filterable by date, route, status, aircraft, type | Done, URL-backed filters           |
+| Fleet timeline — the operating day by airframe                  | Done                               |
+| Flight-control page: times, aircraft, gates, timeline, rotation | Done                               |
+| Aircraft assignment through `evaluateAircraftAssignment`        | Done, Scenario A                   |
+| Releasing an airframe, with the alert it raises                 | Done                               |
+| Status lifecycle, and the transitions it refuses                | Done, 10 unit tests                |
+| Recording and clearing a delay                                  | Done                               |
+| Gates, terminals, counters and carousels                        | Done                               |
+| Creating, duplicating and rescheduling a flight                 | Done                               |
+| Removing a flight that never operated                           | Done, distinct from cancelling     |
+| Recurring schedules: list, create, edit, delete                 | Done                               |
+| Occurrence generation over an explicit window                   | Done, decision 30                  |
+| Per-occurrence exceptions and the three edit scopes             | Done, Scenario C, migration `0005` |
+| `GET /api/routes`, so a flight or pattern can pick a pair       | Done, read-only                    |
 
 ### Verified
 
-- 118 domain unit tests and 66 acceptance tests pass; `npm run verify` exits 0.
-- Withdrawing an airframe with onward sectors names them by flight number before it
-  happens, refuses to apply until the warning is acknowledged by its code, and raises a
-  critical alert per stranded flight when it does.
-- Every aircraft's reported capacity equals the sum of its cabins, across the whole
-  fleet. No column stores the total, and the registration form has no field for one —
-  a registered airframe's 216 seats are 216 seat rows, written in the same transaction.
-- No aircraft can report a state that contradicts its serviceability, and no airborne
-  aircraft claims to be at an airport.
-- A registered airframe round-trips: created, listed with the right capacity, retired,
-  gone from the fleet, and its marks available again.
-- Choosing a type on the registration form fills the cabins from the airframes already
-  flying it — nine A320s seat 148, and so does the tenth before a row is typed. The
-  layout comes back exactly as it was written, aisles included, on a twin-aisle cabin
-  too. A hand edit ends the arrangement: the cabins stop claiming to match the fleet,
-  and correcting the type afterwards does not take the edit back.
-- Amenity resolution is order-independent, and adding a grant beside an existing
-  withdrawal is warned as changing nothing rather than silently doing nothing.
-- The dashboard, the fleet page and the aircraft profile all read `loadFleet`. There is
-  one implementation of "where is this aircraft and what is it doing".
+- 195 domain unit tests pass, up from 118, and 98 acceptance tests across the API and
+  the browser; `npm run verify` exits 0. The 11 still skipped are the `fixme` scenarios
+  Phases 5 to 7 build.
+- Scenario A and Scenario C have left `pending-scenarios.api.spec.ts`. They are
+  executable specifications now, in `flights.api.spec.ts` and `schedules.api.spec.ts`,
+  with their browser halves in `flights.ui.spec.ts`.
+- An unserviceable, overlapping, out-of-position, out-of-range or too-small airframe is
+  refused by name, with the figure and the conflicting flight. The refusal reaches the
+  screen: the Assign button stays disabled and the reason is on it.
+- Releasing an airframe warns, names the sector it strands, and raises a critical alert.
+  Without the acknowledgement the API returns 412 and the flight keeps its aircraft.
+- Editing one occurrence of a four-week service moves that date, records which fields
+  now diverge, and leaves the other three and the pattern untouched.
+- "This and future" splits the season in two: the old pattern keeps its times and its
+  earlier flights, a new one carries the change forward.
+- A series edit leaves a hand-edited occurrence byte-identical unless overwriting is
+  asked for, and says how many it is leaving before it does anything.
+- A flight that has already operated is never rewritten by a plan change.
+- Every instant on the wire is ISO 8601 in UTC — asserted, because it was not before.
+- Recording ninety minutes on a hub departure raises two warnings, not one: the delay
+  is significant, and the airframe's next sector is left with one minute on the ground
+  against a thirty-five-minute minimum. Both must be acknowledged by their own code
+  before the change applies. That is the cross-module check working on real data, and
+  the browser test asserts the Apply button stays disabled until the last tick.
+- A booking administrator reads the board and is refused all four flight mutations at
+  the API, in preview mode as well as apply.
+
+### Fixed here, from earlier phases
+
+Two Phase 2 rules were wrong in ways only real data could show; both are decision 29.
+`evaluateAircraftAssignment` compared a sector against every commitment rather than the
+adjacent ones, which made every aircraft in a rotation unassignable. And instants had
+been leaving the database in Postgres's wire format since Phase 0, against a contract
+that says they are ISO 8601 — decision 28.
+
+Two smaller ones: the seed's schedule upsert did not own the columns it writes, so a
+season shortened by an edit survived a reseed; and `z.coerce.boolean()` read the string
+`"false"` as `true` on three query filters.
 
 ### Known simplifications
 
-- **Aircraft types are read-only.** Registering a tail of an existing type is the
-  common act and is built; adding a _type_ is a much heavier form and a rarer
-  event. The five seeded types cover the network as it stands.
-- **Aircraft records cannot be edited after registration.** They can be
-  registered and retired. An edit form is the same rule set with `editingId`
-  set — `evaluateRegisterAircraft` already takes it — but nothing calls it yet.
-- **Fare-product and flight amenity scope are read-only.** Both are modelled and
-  both resolve correctly; what is missing is the thing to attach them to. Fare
-  products arrive in Phase 6, flights in Phase 3.
-- **No seat map.** The brief calls it optional. Seats exist as rows from the
-  moment an aircraft is registered, so the map has data waiting for it; it only
-  becomes meaningful once bookings can occupy seats, in Phase 6.
-- **Maintenance is read-only.** Events are seeded and shown; scheduling a check is not
-  a mutation the product offers yet. `aircraft:maintenance` exists as a permission and
-  is unused.
+- **Cancellation is not built.** Scenario B propagates to bookings and crew assignments,
+  neither of which exists yet, so it stays in Phase 7 where the plan has always put it.
+  The status lifecycle models `cancelled` and refuses to reach it after pushback; what is
+  missing is the propagation, and no control offers the action.
+- **Scenario F is raised but cannot fire.** `AIRCRAFT_CAPACITY_BELOW_SOLD` and its
+  per-cabin sibling are written, unit-tested, and read on every assignment —
+  `soldByCabin` is passed to the rule today. It is always empty because nothing can sell
+  a seat. Phase 6 supplies the data, not the rule.
+- **Crew is absent from the flight page** beyond a note saying Phase 5 brings it. The
+  complement rules are in `policy.complement` and unused.
+- **Routes are read-only.** A route is a network-planning decision behind a schedule
+  rather than something a controller edits between flights. Picking one is what Phase 3
+  needs; creating and suspending them belongs with the network screens.
+- **Diversion sets the status and raises an alert but does not move the destination.**
+  Re-routing a flight to another airport touches the rotation, the crew and the
+  passengers, which is Phase 7's cross-module work.
 - **No overnight repositioning** (carried from Phase 1). Tails still end the day where
-  their last sector left them, so unassigned flights accumulate across the window.
-  Those are genuine conflicts and feed Phase 7.
+  their last sector left them, so unassigned flights accumulate across the window — 145
+  of 820 in the current seed. Those are genuine conflicts and feed Phase 7.
 
 ---
 
-## Next: Phase 3 — Flight schedule
+## Next: Phase 4 — Live Operations
 
-**Gate:** a conflicting change is refused with a precise reason, and nothing invalid is
-persisted.
+**Gate:** the map is a working view of the same flight records, not a second copy of
+them — selecting a marker selects its list row and opens the flight this console
+already knows about.
 
-1. Flight list and calendar, filterable by date, route, aircraft and status.
-2. The flight-control detail page: status, times, gate, aircraft, delay recording.
-3. Recurring schedules, with per-occurrence overrides that do not disturb the series.
-4. Aircraft assignment through `evaluateAircraftAssignment`, which Phase 2 already
-   built and tested — this is where it becomes reachable from the UI.
+1. The interactive 2D map, on MapLibre GL, using the offline style proven in Phase 1's
+   spike (decision 16).
+2. The synchronised active-flight list, with selection in both directions.
+3. The telemetry provider contract, and the simulation behind it.
+4. Simulated movement through the phases, interpolated along great-circle arcs.
+5. Filters, search, and the flight-detail drawer that links to `/flights/:id`.
 
-Scenario A from the brief lands here, and Scenario C. Scenario F is raised here and
-completed in Phase 6, when seats sold exist to compare capacity against.
+Scenario E lands here. The pieces it needs already exist: `GET /api/live-operations`
+returns the active flights with both endpoints' coordinates, `greatCirclePath` is in the
+kernel and tested, and `flightProgress` is the same function the board reads.
 
 ## Open questions
 
-None blocking. Two worth a decision before Phase 4:
+None blocking. The two from Phase 2 still stand and are now due:
 
 - **Map tiles.** The offline style keeps the app working with no network, but a real
   raster or vector source looks considerably better. If one is acceptable, it needs a
@@ -100,6 +123,29 @@ None blocking. Two worth a decision before Phase 4:
 
 ---
 
+## Phase 2 — complete
+
+**Gate:** an unavailable aircraft is not silently assignable; capacity derives from the
+cabin configuration and is never stored twice. **Met.**
+
+| Area                                                         | Status                        |
+| ------------------------------------------------------------ | ----------------------------- |
+| Serviceability split from operational state                  | Done, migration `0003`        |
+| `deriveFleetState` — position, state, rotation, from flights | Done, pure                    |
+| `evaluateAircraftAssignment`                                 | Done; reachable since Phase 3 |
+| Registering an airframe with its cabins                      | Done, 20 unit tests           |
+| Cabin autofill from the tails already flying the type        | Done, decision 26             |
+| Retiring an airframe                                         | Done, migration `0004`        |
+| Maintenance standing across calendar / hours / cycles        | Done, 96 events seeded        |
+| Amenity resolution and assignment across four scopes         | Done, 22 unit tests           |
+| Fleet list, aircraft profile drawer, amenities page          | Done                          |
+
+The dashboard, the fleet page, the aircraft profile and now the flight-control page all
+read `loadFleet`. There is one implementation of "where is this aircraft and what is it
+doing", and one of "what is this flight" beside it in `loadFlights`.
+
+---
+
 ## Phase 1 — complete
 
 | Area                                                 | Status                                 |
@@ -107,8 +153,8 @@ None blocking. Two worth a decision before Phase 4:
 | Airport reference import from OurAirports, ISO-gated | Done, 1,396 stations                   |
 | Full operational schema, 29 tables by domain         | Done, migration `0002`                 |
 | Fleet: 24 aircraft, 5 types, 47 cabins, 3,559 seats  | Done                                   |
-| Network: 72 routes, 102 recurring schedules          | Done                                   |
-| Flights: 806 across a 9-day window, with rotations   | Done                                   |
+| Network: 72 routes, 106 recurring schedules          | Done                                   |
+| Flights: 820 across a 9-day window, with rotations   | Done                                   |
 | Dashboard on real queries                            | Done                                   |
 | Station autofill from the reference                  | Done                                   |
 | Live map spike                                       | Done, findings recorded, spike deleted |
