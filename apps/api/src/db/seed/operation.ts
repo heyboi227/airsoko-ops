@@ -380,6 +380,8 @@ export async function seedNetwork(
     arrivalGate: flight.arrivalGate,
     baggageCarousel: flight.baggageCarousel,
     notes: null,
+    // Straight from its pattern: nothing about it has been changed by hand.
+    overriddenFields: [],
     createdAt: SEED_EPOCH,
     updatedAt: SEED_EPOCH,
   }));
@@ -423,6 +425,14 @@ export async function seedNetwork(
         // the old departure times in place on a reseed -- the fixture and the
         // database quietly disagreed, and the rotation was solving yesterday's
         // timetable.
+        //
+        // That includes the exception marker. An edit made without recording
+        // -- the acceptance suite declines it on every request -- has its
+        // values put back here, and leaving `overridden_fields` behind kept
+        // the flight flagged as an exception that no longer differed from its
+        // pattern: the schedules page counted it, and a series edit skipped
+        // it. A recorded edit is replayed after the fixtures with its whole
+        // row, marker included, so a genuine exception survives a reseed.
         set: {
           scheduleId: sql`excluded.schedule_id`,
           callsign: sql`excluded.callsign`,
@@ -444,6 +454,7 @@ export async function seedNetwork(
           departureGate: sql`excluded.departure_gate`,
           arrivalGate: sql`excluded.arrival_gate`,
           baggageCarousel: sql`excluded.baggage_carousel`,
+          overriddenFields: sql`excluded.overridden_fields`,
           updatedAt: SEED_EPOCH,
         },
       });
