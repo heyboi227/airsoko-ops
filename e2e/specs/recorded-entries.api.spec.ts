@@ -42,6 +42,7 @@ interface Occurrence {
   flightNumber: string;
   scheduleId: string | null;
   origin: { gate: string | null };
+  notes: string | null;
   overriddenFields: string[];
 }
 
@@ -62,7 +63,7 @@ function readEntry(path: string): Entry {
  */
 async function mutate(
   request: APIRequestContext,
-  method: "POST" | "DELETE",
+  method: "POST" | "PATCH" | "DELETE",
   path: string,
   token: string,
   data: Record<string, unknown>,
@@ -408,30 +409,41 @@ test.describe("recorded entries", () => {
 
     try {
       // One edit the suite's way, which nobody asked to keep, and one an
-      // operator made for real. Both are exceptions until the seed runs.
+      // operator made for real. Both are exceptions until the seed runs. The
+      // gate is a column the seed gives a value; the note is one it only ever
+      // leaves at null, which is not the same as not owning it.
       const gate = { departureGate: "Z97" };
+      const note = { notes: "Left by the acceptance suite" };
       await mutate(request, "POST", `/api/flights/${unrecorded.id}/gate`, token, gate, false);
+      await mutate(request, "PATCH", `/api/flights/${unrecorded.id}`, token, note, false);
       await mutate(request, "POST", `/api/flights/${recorded.id}/gate`, token, gate, true);
-      expect((await occurrence(request, token, unrecorded.id)).overriddenFields).toContain(
-        "departureGate",
+      await mutate(request, "PATCH", `/api/flights/${recorded.id}`, token, note, true);
+      const edited = await occurrence(request, token, unrecorded.id);
+      expect(edited.notes).toBe(note.notes);
+      expect(edited.overriddenFields).toEqual(
+        expect.arrayContaining(["departureGate", "notes"]),
       );
-      expect(readEntry(file).row?.overriddenFields).toContain("departureGate");
+      expect(readEntry(file).row?.overriddenFields).toEqual(
+        expect.arrayContaining(["departureGate", "notes"]),
+      );
 
       reseed();
 
       // The fixture is back, and so is the marker. A reseed used to restore
       // the gate and leave the flag, so the schedules page counted an
       // exception that no longer differed from its pattern, and a series edit
-      // skipped it.
+      // skipped it. The note it used to leave in place altogether.
       const restored = await occurrence(request, token, unrecorded.id);
       expect(restored.origin.gate).toBe(unrecorded.origin.gate);
+      expect(restored.notes).toBeNull();
       expect(restored.overriddenFields).toEqual([]);
       expect(await exceptionCount(request, token, unrecorded)).toBe(0);
 
       // The recorded edit landed after the fixtures, exception and all.
       const kept = await occurrence(request, token, recorded.id);
       expect(kept.origin.gate).toBe("Z97");
-      expect(kept.overriddenFields).toContain("departureGate");
+      expect(kept.notes).toBe(note.notes);
+      expect(kept.overriddenFields).toEqual(expect.arrayContaining(["departureGate", "notes"]));
       expect(await exceptionCount(request, token, recorded)).toBe(1);
     } finally {
       rmSync(file, { force: true });

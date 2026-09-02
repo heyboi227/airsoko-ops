@@ -131,9 +131,11 @@ pipeline records every committed change as a JSON file under
 the acceptance suite declines to be recorded, so its fixtures stay out of the committed
 data. Migration `0006` adds the change log and its triggers. Five acceptance tests in
 `recorded-entries.api.spec.ts` pin it, two of them by reseeding the database: one reads
-the entry, and then its tombstone, back; the other shows an edit the suite declined to
-record going back on its pattern, exception marker included, while a recorded edit keeps
-its exception.
+the entry, and then its tombstone, back; the other shows a gate and a note the suite
+declined to record going back on their pattern, exception marker included, while a
+recorded edit keeps both and its exception. The flight upsert names every column the
+generated row sets, the ones the seed leaves at null included, so nothing a hand edit
+wrote outlives a reseed.
 
 ---
 
