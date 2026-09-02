@@ -23,6 +23,7 @@ const RECORD = { "x-airsoko-recording": "on" } as const;
 
 /** A number the seeded network does not use. The schedules spec holds 970. */
 const FLIGHT_NUMBER = "SO971";
+const SUITE_FLIGHT_NUMBERS = new Set(["SO970", FLIGHT_NUMBER]);
 const SERVICE_DATE = "2027-05-04";
 const REGISTRATION = "YU-SNC";
 
@@ -33,6 +34,15 @@ interface Entry {
   row?: Record<string, unknown>;
   seats?: unknown[];
   statusEvents?: unknown[];
+}
+
+/** A dated flight as the API reports it, in the fields these tests read. */
+interface Occurrence {
+  id: string;
+  flightNumber: string;
+  scheduleId: string | null;
+  origin: { gate: string | null };
+  overriddenFields: string[];
 }
 
 function entryPath(kind: string, key: string): string {
@@ -133,6 +143,74 @@ async function removeFlight(
 /** Best effort, for `finally` blocks: the flight may already be gone. */
 async function discardFlight(request: APIRequestContext, token: string, id: string) {
   await request.delete(`/api/flights/${id}`, { headers: auth(token), data: {} });
+}
+
+async function occurrence(
+  request: APIRequestContext,
+  token: string,
+  id: string,
+): Promise<Occurrence> {
+  const response = await request.get(`/api/flights/${id}`, { headers: auth(token) });
+  expect(response.status(), await response.text()).toBe(200);
+  return ((await response.json()) as { flight: Occurrence }).flight;
+}
+
+/**
+ * Occurrences the seed generated, on a day far enough ahead that nothing on
+ * it has operated, and that nobody has edited yet.
+ *
+ * The API does not say which rows the seed made. A generated occurrence has a
+ * pattern behind it, and the only patterns the suite adds use numbers the
+ * seeded network does not, so those are excluded by name.
+ */
+async function untouchedOccurrences(
+  request: APIRequestContext,
+  token: string,
+  count: number,
+): Promise<Occurrence[]> {
+  const today = await request.get("/api/flights", {
+    headers: auth(token),
+    params: { limit: "1" },
+  });
+  const { generatedAt } = (await today.json()) as { generatedAt: string };
+  const day = new Date(generatedAt);
+  day.setUTCDate(day.getUTCDate() + 2);
+  const date = day.toISOString().slice(0, 10);
+
+  const response = await request.get("/api/flights", {
+    headers: auth(token),
+    params: { from: date, to: date, status: "scheduled", limit: "100" },
+  });
+  const { items } = (await response.json()) as { items: Occurrence[] };
+  const candidates = items.filter(
+    (item) =>
+      item.scheduleId !== null &&
+      item.overriddenFields.length === 0 &&
+      !SUITE_FLIGHT_NUMBERS.has(item.flightNumber),
+  );
+  if (candidates.length < count) {
+    throw new Error(`Fewer than ${count} untouched seeded occurrences on ${date}.`);
+  }
+  return candidates.slice(0, count);
+}
+
+/** What the schedules page reports for the pattern behind an occurrence. */
+async function exceptionCount(
+  request: APIRequestContext,
+  token: string,
+  flight: Occurrence,
+): Promise<number> {
+  const response = await request.get("/api/schedules", {
+    headers: auth(token),
+    params: { search: flight.flightNumber },
+  });
+  const { items } = (await response.json()) as {
+    items: { id: string; exceptionCount: number }[];
+  };
+  const pattern = items.find((item) => item.id === flight.scheduleId);
+  if (!pattern)
+    throw new Error(`No pattern ${flight.scheduleId} behind ${flight.flightNumber}.`);
+  return pattern.exceptionCount;
 }
 
 test.describe("recorded entries", () => {
@@ -314,6 +392,52 @@ test.describe("recorded entries", () => {
     } finally {
       rmSync(file, { force: true });
       await discardFlight(request, token, id);
+    }
+  });
+
+  test("npm run db:seed puts a hand-edited occurrence back on its pattern, marker included, and keeps a recorded one", async ({
+    request,
+  }) => {
+    // Two seeds of the whole database.
+    test.setTimeout(300_000);
+
+    const token = await signIn(request, ACCOUNTS.opsController);
+    const [unrecorded, recorded] = await untouchedOccurrences(request, token, 2);
+    if (!unrecorded || !recorded) throw new Error("Two occurrences were asked for.");
+    const file = entryPath("flights", recorded.id);
+
+    try {
+      // One edit the suite's way, which nobody asked to keep, and one an
+      // operator made for real. Both are exceptions until the seed runs.
+      const gate = { departureGate: "Z97" };
+      await mutate(request, "POST", `/api/flights/${unrecorded.id}/gate`, token, gate, false);
+      await mutate(request, "POST", `/api/flights/${recorded.id}/gate`, token, gate, true);
+      expect((await occurrence(request, token, unrecorded.id)).overriddenFields).toContain(
+        "departureGate",
+      );
+      expect(readEntry(file).row?.overriddenFields).toContain("departureGate");
+
+      reseed();
+
+      // The fixture is back, and so is the marker. A reseed used to restore
+      // the gate and leave the flag, so the schedules page counted an
+      // exception that no longer differed from its pattern, and a series edit
+      // skipped it.
+      const restored = await occurrence(request, token, unrecorded.id);
+      expect(restored.origin.gate).toBe(unrecorded.origin.gate);
+      expect(restored.overriddenFields).toEqual([]);
+      expect(await exceptionCount(request, token, unrecorded)).toBe(0);
+
+      // The recorded edit landed after the fixtures, exception and all.
+      const kept = await occurrence(request, token, recorded.id);
+      expect(kept.origin.gate).toBe("Z97");
+      expect(kept.overriddenFields).toContain("departureGate");
+      expect(await exceptionCount(request, token, recorded)).toBe(1);
+    } finally {
+      rmSync(file, { force: true });
+      // Without its file the recorded edit is a hand edit like any other, and
+      // the next seed puts that flight back too.
+      reseed();
     }
   });
 });
