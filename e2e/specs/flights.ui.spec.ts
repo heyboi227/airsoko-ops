@@ -292,7 +292,11 @@ test.describe("Scenario C: the edit scope is explicit", () => {
     await expect(page.getByRole("columnheader", { name: "Occurrences" })).toBeVisible();
 
     await page.getByRole("row").nth(1).click();
-    await expect(page.getByText("Occurrences")).toBeVisible();
+    // The drawer's own heading, not the list's "Occurrences" column header and
+    // not the exception banner above the table -- both of which `getByText`
+    // matches, the banner only once the seed or the suite has produced two
+    // exceptions, so a plain text match passes or fails on the count.
+    await expect(page.getByRole("heading", { name: /^Occurrences/ })).toBeVisible();
     await expect(page.getByText(/Follows the pattern/)).toBeVisible();
     await expect(page.getByText(/A season runs for months/)).toBeVisible();
   });

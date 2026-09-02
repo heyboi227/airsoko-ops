@@ -21,6 +21,7 @@ import {
   buildSchedules,
   type GeneratedFlight,
 } from "./generate.ts";
+import { unserviceableRegistrations } from "./maintenance.ts";
 
 /**
  * Seeds the operating airline: fleet, network, schedules and today's flights.
@@ -341,7 +342,11 @@ export async function seedNetwork(
     });
 
   const generatedFlights = buildFlights(generatedSchedules, stations, referenceDate, now);
-  const rotation = assignRotations(generatedFlights, now);
+  const rotation = assignRotations(
+    generatedFlights,
+    now,
+    unserviceableRegistrations(referenceDate, now),
+  );
 
   const flightRows = generatedFlights.map((flight) => ({
     id: flight.id,

@@ -6,7 +6,13 @@ on:
   pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Keyed by pull request, so a follow-up push supersedes its own run and only
+  # the last commit of a branch is tested -- but by commit for a push to main,
+  # because two merges landing a minute apart share `refs/heads/main` and the
+  # first one's acceptance job, the longest in the matrix, was being cancelled
+  # before it finished. A cancelled run is not a green one, and dependabot
+  # merges arrive in exactly that pattern.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
