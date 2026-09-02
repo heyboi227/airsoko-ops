@@ -88,7 +88,12 @@ function checkPlanFor(
   // workflow the brief asks for. Three tails are therefore placed by name.
   const throughInterval =
     FORCED_STANDING[registration] ?? unit(`check-position:${registration}`);
-  const daysSinceCheck = Math.round(throughInterval * (interval.days * 1.08));
+  // The calendar axis is read at the same fraction as hours and cycles below.
+  // It used to be stretched by 8%, which quietly moved the overdue line to
+  // 0.926 and made three of the four tails placed by name above overdue
+  // instead of the one this file says it wants -- and left the calendar
+  // limit biting first on every airframe in the fleet.
+  const daysSinceCheck = Math.round(throughInterval * interval.days);
   const lastCheckAt = addDays(`${referenceDate}T00:00:00.000Z`, -daysSinceCheck);
 
   return {
