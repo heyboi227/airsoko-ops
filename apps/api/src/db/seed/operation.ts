@@ -433,12 +433,23 @@ export async function seedNetwork(
         // pattern: the schedules page counted it, and a series edit skipped
         // it. A recorded edit is replayed after the fixtures with its whole
         // row, marker included, so a genuine exception survives a reseed.
+        //
+        // Every column the row sets is named here, the ones the seed only
+        // ever leaves at null included: a column this block leaves out is a
+        // column a hand edit keeps. `notes` was one of ten missing, so a note
+        // made without recording outlived a reseed while the marker saying
+        // the flight was hand-edited did not -- the exception above, mirrored.
         set: {
           scheduleId: sql`excluded.schedule_id`,
+          flightNumber: sql`excluded.flight_number`,
           callsign: sql`excluded.callsign`,
+          operatingAirlineId: sql`excluded.operating_airline_id`,
+          marketingAirlineId: sql`excluded.marketing_airline_id`,
+          marketingFlightNumber: sql`excluded.marketing_flight_number`,
           routeId: sql`excluded.route_id`,
           originAirportId: sql`excluded.origin_airport_id`,
           destinationAirportId: sql`excluded.destination_airport_id`,
+          serviceDate: sql`excluded.service_date`,
           scheduledDeparture: sql`excluded.scheduled_departure`,
           scheduledArrival: sql`excluded.scheduled_arrival`,
           estimatedDeparture: sql`excluded.estimated_departure`,
@@ -448,12 +459,17 @@ export async function seedNetwork(
           aircraftId: sql`excluded.aircraft_id`,
           status: sql`excluded.status`,
           phase: sql`excluded.phase`,
+          flightType: sql`excluded.flight_type`,
           delayReason: sql`excluded.delay_reason`,
+          delayNote: sql`excluded.delay_note`,
           cancellationReason: sql`excluded.cancellation_reason`,
           departureTerminal: sql`excluded.departure_terminal`,
           departureGate: sql`excluded.departure_gate`,
+          checkInCounters: sql`excluded.check_in_counters`,
+          arrivalTerminal: sql`excluded.arrival_terminal`,
           arrivalGate: sql`excluded.arrival_gate`,
           baggageCarousel: sql`excluded.baggage_carousel`,
+          notes: sql`excluded.notes`,
           overriddenFields: sql`excluded.overridden_fields`,
           updatedAt: SEED_EPOCH,
         },
