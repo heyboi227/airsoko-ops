@@ -133,9 +133,11 @@ data. Migration `0006` adds the change log and its triggers. Five acceptance tes
 `recorded-entries.api.spec.ts` pin it, two of them by reseeding the database: one reads
 the entry, and then its tombstone, back; the other shows a gate and a note the suite
 declined to record going back on their pattern, exception marker included, while a
-recorded edit keeps both and its exception. The flight upsert names every column the
-generated row sets, the ones the seed leaves at null included, so nothing a hand edit
-wrote outlives a reseed.
+recorded edit keeps both and its exception. The schedule and flight upserts, the two that
+own every column of a row the seed generated, read their SET block from the table
+(`ownEveryColumn` in `seed/upsert.ts`) rather than from a list kept by hand, so nothing a
+hand edit wrote outlives a reseed; a unit test holds that block to every column of both
+tables, so a column added to the schema is owned without being listed.
 
 ---
 

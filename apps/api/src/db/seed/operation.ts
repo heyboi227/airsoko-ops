@@ -22,6 +22,7 @@ import {
   type GeneratedFlight,
 } from "./generate.ts";
 import { unserviceableRegistrations } from "./maintenance.ts";
+import { ownEveryColumn } from "./upsert.ts";
 
 /**
  * Seeds the operating airline: fleet, network, schedules and today's flights.
@@ -326,19 +327,7 @@ export async function seedNetwork(
       // updated only the times, so a season shortened by a "this and future"
       // edit survived a reseed and the pattern no longer matched the plan it
       // came from.
-      set: {
-        routeId: sql`excluded.route_id`,
-        validFrom: sql`excluded.valid_from`,
-        validTo: sql`excluded.valid_to`,
-        departureLocalTime: sql`excluded.departure_local_time`,
-        arrivalLocalTime: sql`excluded.arrival_local_time`,
-        arrivalDayOffset: sql`excluded.arrival_day_offset`,
-        operatingDays: sql`excluded.operating_days`,
-        aircraftTypeId: sql`excluded.aircraft_type_id`,
-        season: sql`excluded.season`,
-        active: sql`excluded.active`,
-        updatedAt: SEED_EPOCH,
-      },
+      set: ownEveryColumn(recurringSchedules, SEED_EPOCH),
     });
 
   const generatedFlights = buildFlights(generatedSchedules, stations, referenceDate, now);
@@ -434,45 +423,17 @@ export async function seedNetwork(
         // it. A recorded edit is replayed after the fixtures with its whole
         // row, marker included, so a genuine exception survives a reseed.
         //
-        // Every column the row sets is named here, the ones the seed only
-        // ever leaves at null included: a column this block leaves out is a
-        // column a hand edit keeps. `notes` was one of ten missing, so a note
-        // made without recording outlived a reseed while the marker saying
-        // the flight was hand-edited did not -- the exception above, mirrored.
-        set: {
-          scheduleId: sql`excluded.schedule_id`,
-          flightNumber: sql`excluded.flight_number`,
-          callsign: sql`excluded.callsign`,
-          operatingAirlineId: sql`excluded.operating_airline_id`,
-          marketingAirlineId: sql`excluded.marketing_airline_id`,
-          marketingFlightNumber: sql`excluded.marketing_flight_number`,
-          routeId: sql`excluded.route_id`,
-          originAirportId: sql`excluded.origin_airport_id`,
-          destinationAirportId: sql`excluded.destination_airport_id`,
-          serviceDate: sql`excluded.service_date`,
-          scheduledDeparture: sql`excluded.scheduled_departure`,
-          scheduledArrival: sql`excluded.scheduled_arrival`,
-          estimatedDeparture: sql`excluded.estimated_departure`,
-          estimatedArrival: sql`excluded.estimated_arrival`,
-          actualDeparture: sql`excluded.actual_departure`,
-          actualArrival: sql`excluded.actual_arrival`,
-          aircraftId: sql`excluded.aircraft_id`,
-          status: sql`excluded.status`,
-          phase: sql`excluded.phase`,
-          flightType: sql`excluded.flight_type`,
-          delayReason: sql`excluded.delay_reason`,
-          delayNote: sql`excluded.delay_note`,
-          cancellationReason: sql`excluded.cancellation_reason`,
-          departureTerminal: sql`excluded.departure_terminal`,
-          departureGate: sql`excluded.departure_gate`,
-          checkInCounters: sql`excluded.check_in_counters`,
-          arrivalTerminal: sql`excluded.arrival_terminal`,
-          arrivalGate: sql`excluded.arrival_gate`,
-          baggageCarousel: sql`excluded.baggage_carousel`,
-          notes: sql`excluded.notes`,
-          overriddenFields: sql`excluded.overridden_fields`,
-          updatedAt: SEED_EPOCH,
-        },
+        // Every column the row sets is owned, the ones the seed only ever
+        // leaves at null included: a column this block left out was a column
+        // a hand edit kept. `notes` was one of ten missing at one point, so a
+        // note made without recording outlived a reseed while the marker
+        // saying the flight was hand-edited did not -- the exception above,
+        // mirrored.
+        //
+        // So the block is read from the table, not written out. A list kept
+        // by hand fell behind the row three times -- the scheduled times,
+        // then the marker, then the notes and nine more.
+        set: ownEveryColumn(flightInstances, SEED_EPOCH),
       });
   }
 
