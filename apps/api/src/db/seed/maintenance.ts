@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
+import { DEFAULT_POLICY, maintenanceStanding } from "@airsoko/domain";
 import { db } from "../client.ts";
 import { aircraft, amenities, amenityAssignments, maintenanceEvents } from "../schema/index.ts";
 import { airportId, seededId } from "../ids.ts";
@@ -47,6 +48,105 @@ function addDays(instant: string, days: number): string {
   return new Date(Date.parse(instant) + days * 86_400_000).toISOString();
 }
 
+interface CheckPlan {
+  interval: (typeof CHECK_INTERVAL)[keyof typeof CHECK_INTERVAL];
+  lastCheckAt: string;
+  nextCheckDueAt: string;
+  /** Interval allowance consumed by the reference day. */
+  hoursUsed: number;
+  cyclesUsed: number;
+  daysRemaining: number;
+}
+
+/**
+ * The check standing this seed will give an airframe, worked out from nothing
+ * but its registration and the reference day.
+ *
+ * Pure, and deliberately free of the database: the rotation builder needs the
+ * answer before any of this is written. See `unserviceableRegistrations`.
+ */
+function checkPlanFor(
+  registration: string,
+  icaoTypeCode: string,
+  referenceDate: string,
+): CheckPlan | null {
+  const type = SEED_AIRCRAFT_TYPES.find((candidate) => candidate.icaoTypeCode === icaoTypeCode);
+  if (!type) return null;
+
+  const interval =
+    type.bodyType === "regional"
+      ? CHECK_INTERVAL.regional
+      : type.bodyType === "wide_body"
+        ? CHECK_INTERVAL.wide_body
+        : CHECK_INTERVAL.narrow_body;
+
+  // A spread of standings: most comfortable, a few close, one past due.
+  //
+  // Position in the interval is hashed off the registration, so it is stable
+  // and varied -- but a uniform hash left only one airframe anywhere near a
+  // limit, and a fleet where nothing is ever due demonstrates none of the
+  // workflow the brief asks for. Three tails are therefore placed by name.
+  const throughInterval =
+    FORCED_STANDING[registration] ?? unit(`check-position:${registration}`);
+  const daysSinceCheck = Math.round(throughInterval * (interval.days * 1.08));
+  const lastCheckAt = addDays(`${referenceDate}T00:00:00.000Z`, -daysSinceCheck);
+
+  return {
+    interval,
+    lastCheckAt,
+    nextCheckDueAt: addDays(lastCheckAt, interval.days),
+    // Hours and cycles limits sit ahead of the current totals by roughly the
+    // same fraction of the interval, so the three limits agree about how worn
+    // the airframe is rather than contradicting each other.
+    hoursUsed: Math.round(throughInterval * interval.hours),
+    cyclesUsed: Math.round(throughInterval * interval.cycles),
+    daysRemaining: interval.days - daysSinceCheck,
+  };
+}
+
+/**
+ * Registrations the domain would refuse to put on a flight at `now`.
+ *
+ * The rotation builder excludes these. An airframe past a check limit is
+ * blocked from assignment by `rules/aircraft.ts`, so a seed that rosters one
+ * anyway produces a board the API itself will not let an operator reproduce:
+ * releasing that airframe from its sector is accepted and putting it back is
+ * refused, which is not a state any real operation can be in.
+ *
+ * Asked of the same `maintenanceStanding` the API uses rather than by reading
+ * the intervals above a second time, so the two cannot drift apart.
+ */
+export function unserviceableRegistrations(
+  referenceDate: string,
+  now: string,
+): ReadonlySet<string> {
+  const unserviceable = new Set<string>();
+
+  for (const entry of SEED_AIRCRAFT) {
+    const plan = checkPlanFor(entry.registration, entry.icaoTypeCode, referenceDate);
+    if (!plan) continue;
+
+    const standing = maintenanceStanding(
+      {
+        nextCheckType: "a_check",
+        nextCheckDueAt: plan.nextCheckDueAt,
+        // The written limits are the airframe's totals plus what is left of
+        // the interval, so the totals cancel and only the remainder matters.
+        nextCheckDueHours: plan.interval.hours - plan.hoursUsed,
+        nextCheckDueCycles: plan.interval.cycles - plan.cyclesUsed,
+        totalHours: 0,
+        totalCycles: 0,
+      },
+      now,
+      DEFAULT_POLICY,
+    );
+
+    if (standing.urgency === "exceeded") unserviceable.add(entry.registration);
+  }
+
+  return unserviceable;
+}
+
 /**
  * Sets each airframe's check standing, relative to the reference day so the
  * fleet reads plausibly whatever date the seed runs on.
@@ -57,48 +157,20 @@ export async function seedMaintenance(referenceDate: string): Promise<{
   approaching: number;
   overdue: number;
 }> {
-  const typeByCode = new Map(SEED_AIRCRAFT_TYPES.map((type) => [type.icaoTypeCode, type]));
-  const today = `${referenceDate}T00:00:00.000Z`;
-
   const events: (typeof maintenanceEvents.$inferInsert)[] = [];
   let approaching = 0;
   let overdue = 0;
 
   for (const entry of SEED_AIRCRAFT) {
-    const type = typeByCode.get(entry.icaoTypeCode);
-    if (!type) continue;
+    const plan = checkPlanFor(entry.registration, entry.icaoTypeCode, referenceDate);
+    if (!plan) continue;
 
-    const bodyType = type.bodyType;
-    const interval =
-      bodyType === "regional"
-        ? CHECK_INTERVAL.regional
-        : bodyType === "wide_body"
-          ? CHECK_INTERVAL.wide_body
-          : CHECK_INTERVAL.narrow_body;
-
+    const { interval, lastCheckAt, nextCheckDueAt, hoursUsed, cyclesUsed, daysRemaining } =
+      plan;
     const id = seededId("aircraft", entry.registration);
-
-    // A spread of standings: most comfortable, a few close, one past due.
-    //
-    // Position in the interval is hashed off the registration, so it is stable
-    // and varied -- but a uniform hash left only one airframe anywhere near a
-    // limit, and a fleet where nothing is ever due demonstrates none of the
-    // workflow the brief asks for. Three tails are therefore placed by name.
-    const forced = FORCED_STANDING[entry.registration];
-    const throughInterval = forced ?? unit(`check-position:${entry.registration}`);
-    const daysSinceCheck = Math.round(throughInterval * (interval.days * 1.08));
-    const lastCheckAt = addDays(today, -daysSinceCheck);
-    const nextCheckDueAt = addDays(lastCheckAt, interval.days);
-    const daysRemaining = interval.days - daysSinceCheck;
 
     if (daysRemaining < 0) overdue += 1;
     else if (daysRemaining <= 14) approaching += 1;
-
-    // Hours and cycles limits sit ahead of the current totals by roughly the
-    // same fraction of the interval, so the three limits agree about how worn
-    // the airframe is rather than contradicting each other.
-    const hoursUsed = Math.round(throughInterval * interval.hours);
-    const cyclesUsed = Math.round(throughInterval * interval.cycles);
 
     const [current] = await db
       .select({ totalHours: aircraft.totalHours, totalCycles: aircraft.totalCycles })

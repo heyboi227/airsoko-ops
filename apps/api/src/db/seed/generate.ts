@@ -545,8 +545,17 @@ const EQUIPMENT_TYPES: Readonly<Record<Equipment, readonly string[]>> = {
  * they do not, the flight is left without an aircraft rather than teleporting
  * one -- an unassigned flight is a real operational state, and one the alert
  * feed should be showing.
+ *
+ * `unserviceable` names the airframes the domain will not allow onto a flight
+ * -- see `unserviceableRegistrations`. They are held out of the pool rather
+ * than rostered and then flagged, because the rules that refuse an assignment
+ * apply to the seed's assignments too.
  */
-export function assignRotations(flights: GeneratedFlight[], now: string): RotationResult {
+export function assignRotations(
+  flights: GeneratedFlight[],
+  now: string,
+  unserviceable: ReadonlySet<string>,
+): RotationResult {
   const turnaroundByType = new Map(
     SEED_AIRCRAFT_TYPES.map((type) => [type.icaoTypeCode, type.minimumTurnaroundMinutes]),
   );
@@ -561,7 +570,9 @@ export function assignRotations(flights: GeneratedFlight[], now: string): Rotati
     ]),
   );
 
-  const tails: Tail[] = SEED_AIRCRAFT.filter((entry) => !entry.unavailable).map((entry) => ({
+  const tails: Tail[] = SEED_AIRCRAFT.filter(
+    (entry) => !entry.unavailable && !unserviceable.has(entry.registration),
+  ).map((entry) => ({
     registration: entry.registration,
     typeCode: entry.icaoTypeCode,
     equipment: equipmentByType.get(entry.icaoTypeCode) ?? "narrow_body",
