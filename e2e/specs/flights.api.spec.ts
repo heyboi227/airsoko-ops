@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ACCOUNTS, auth, signIn } from "../support/api.ts";
+import { ACCOUNTS, applyAcknowledging, auth, signIn } from "../support/api.ts";
 
 /**
  * Flights: the list, the control actions, and the rules that guard them.
@@ -283,8 +283,9 @@ test.describe("Scenario A: aircraft reassignment", () => {
     if (!original) throw new Error("unreachable");
 
     // Release, then put the same airframe back. Releasing is the mirror rule
-    // and has to warn; re-assigning must then pass every check cleanly,
-    // because this is exactly the rotation the aircraft already flies.
+    // and has to warn; putting the aircraft back on the rotation it already
+    // flies must be accepted, though not necessarily in silence -- rules
+    // about the airframe itself, such as a check coming due, still speak.
     const releasePreview = (await (
       await request.post(`/api/flights/${target.id}/aircraft`, {
         headers: auth(token),
@@ -310,18 +311,22 @@ test.describe("Scenario A: aircraft reassignment", () => {
     );
 
     try {
+      // Acknowledge what the preview above actually reported, not a list
+      // written by hand: the assertion that releasing warns is the one
+      // directly above, and a second rule firing here is not this test's
+      // business. See `applyAcknowledging` in ../support/api.ts.
       const released = await request.post(`/api/flights/${target.id}/aircraft`, {
         headers: auth(token),
         data: {
           aircraftId: null,
           mutation: {
             preview: false,
-            acknowledgedWarnings: ["FLIGHT_NO_AIRCRAFT_ASSIGNED"],
+            acknowledgedWarnings: releasePreview.requiresAcknowledgement,
             reason: "Scenario A",
           },
         },
       });
-      expect(released.status()).toBe(200);
+      expect(released.status(), await released.text()).toBe(200);
 
       const empty = await request.get(`/api/flights/${target.id}`, { headers: auth(token) });
       expect(((await empty.json()) as { flight: FlightRow }).flight.aircraft).toBeNull();
@@ -333,18 +338,19 @@ test.describe("Scenario A: aircraft reassignment", () => {
       });
       expect(alerts.status()).toBe(200);
     } finally {
-      const restored = await request.post(`/api/flights/${target.id}/aircraft`, {
-        headers: auth(token),
-        data: {
-          aircraftId: original.id,
-          mutation: {
-            preview: false,
-            acknowledgedWarnings: ["AIRCRAFT_TYPE_MISMATCH_WITH_SCHEDULE"],
-            reason: "Scenario A restore",
-          },
-        },
-      });
-      expect(restored.status()).toBe(200);
+      // Putting the airframe back is teardown, not a claim about the rules.
+      // Which rules it trips depends on the calendar -- a seeded check ages
+      // into MAINTENANCE_LIMIT_APPROACHING for the target date, and a fixed
+      // list went 412 the day that happened, leaving the flight released.
+      const restored = await applyAcknowledging(
+        request,
+        "POST",
+        `/api/flights/${target.id}/aircraft`,
+        token,
+        { aircraftId: original.id },
+        "Scenario A restore",
+      );
+      expect(restored.status(), await restored.text()).toBe(200);
     }
 
     const back = await request.get(`/api/flights/${target.id}`, { headers: auth(token) });
@@ -468,10 +474,7 @@ test.describe("flight control", () => {
           note: "Spec",
           mutation: {
             preview: false,
-            acknowledgedWarnings: [
-              "FLIGHT_DELAY_SIGNIFICANT",
-              "AIRCRAFT_INSUFFICIENT_TURNAROUND",
-            ],
+            acknowledgedWarnings: preview.requiresAcknowledgement,
           },
         },
       });

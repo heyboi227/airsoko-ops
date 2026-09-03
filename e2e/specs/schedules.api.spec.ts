@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ACCOUNTS, auth, signIn } from "../support/api.ts";
+import { ACCOUNTS, applyAcknowledging, auth, signIn } from "../support/api.ts";
 
 /**
  * Recurring schedules, and Scenario C.
@@ -142,14 +142,14 @@ async function removeTestSeries(request: APIRequestContext, token: string) {
   const body = (await response.json()) as { items: ScheduleRow[] };
 
   for (const pattern of body.items) {
-    const deleted = await request.delete(`/api/schedules/${pattern.id}`, {
-      headers: auth(token),
-      data: {
-        preview: false,
-        acknowledgedWarnings: ["SCHEDULE_HAS_OCCURRENCES"],
-        reason: "Scenario C fixture teardown",
-      },
-    });
+    const deleted = await applyAcknowledging(
+      request,
+      "DELETE",
+      `/api/schedules/${pattern.id}`,
+      token,
+      {},
+      "Scenario C fixture teardown",
+    );
     expect(deleted.status(), await deleted.text()).toBe(200);
   }
 }
@@ -457,7 +457,7 @@ test.describe("Scenario C: recurring schedule exception", () => {
           arrivalLocalTime: "08:50",
           mutation: {
             preview: false,
-            acknowledgedWarnings: ["FLIGHT_OCCURRENCE_DIVERGED"],
+            acknowledgedWarnings: preview.requiresAcknowledgement,
             reason: "Scenario C",
           },
         },
@@ -497,19 +497,18 @@ test.describe("Scenario C: recurring schedule exception", () => {
         },
       });
 
-      const applied = await request.patch(`/api/schedules/${scheduleId}`, {
-        headers: auth(token),
-        data: {
+      const applied = await applyAcknowledging(
+        request,
+        "PATCH",
+        `/api/schedules/${scheduleId}`,
+        token,
+        {
           departureLocalTime: "07:15",
           arrivalLocalTime: "08:50",
           overwriteExceptions: true,
-          mutation: {
-            preview: false,
-            acknowledgedWarnings: ["FLIGHT_OCCURRENCE_DIVERGED"],
-            reason: "Scenario C",
-          },
         },
-      });
+        "Scenario C",
+      );
       expect(applied.status(), await applied.text()).toBe(200);
 
       const after = await occurrencesOf(request, token, scheduleId);

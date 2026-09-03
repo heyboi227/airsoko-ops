@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ACCOUNTS, auth, signIn } from "../support/api.ts";
+import { ACCOUNTS, applyAcknowledging, auth, signIn } from "../support/api.ts";
 
 /**
  * Registering and retiring an airframe, changing what a cabin offers, and the
@@ -210,27 +210,17 @@ test.describe("registering an airframe", () => {
     let created: string | null = null;
 
     try {
-      const response = await request.post("/api/aircraft", {
-        headers: auth(token),
-        data: {
-          ...draft(type.id),
-          mutation: {
-            preview: false,
-            // The second code only appears on a re-run, once a previous run
-            // has retired this tail. Acknowledging a code that was not raised
-            // is harmless, and it keeps the test idempotent.
-            // The last two appear only on a re-run, once a previous run has
-            // retired this tail: its marks go back to the register but its
-            // serial never does. Acknowledging a code that was not raised is
-            // harmless, and it keeps the test idempotent.
-            acknowledgedWarnings: [
-              "AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET",
-              "AIRCRAFT_REGISTRATION_PREVIOUSLY_USED",
-              "AIRCRAFT_SERIAL_IN_USE",
-            ],
-          },
-        },
-      });
+      // Which codes this raises depends on what earlier runs left behind --
+      // a re-run hands back the marks but never the serial -- and on rules
+      // that move on their own. Registering the tail is the fixture; the
+      // assertions below are what the test is about.
+      const response = await applyAcknowledging(
+        request,
+        "POST",
+        "/api/aircraft",
+        token,
+        draft(type.id),
+      );
 
       expect(response.status()).toBe(201);
       const body = (await response.json()) as {
@@ -396,20 +386,13 @@ test.describe("what the fleet already knows about a type", () => {
     let created: string | null = null;
 
     try {
-      const response = await request.post("/api/aircraft", {
-        headers: auth(token),
-        data: {
-          ...draft(type.id),
-          mutation: {
-            preview: false,
-            acknowledgedWarnings: [
-              "AIRCRAFT_CAPACITY_DIFFERS_FROM_FLEET",
-              "AIRCRAFT_REGISTRATION_PREVIOUSLY_USED",
-              "AIRCRAFT_SERIAL_IN_USE",
-            ],
-          },
-        },
-      });
+      const response = await applyAcknowledging(
+        request,
+        "POST",
+        "/api/aircraft",
+        token,
+        draft(type.id),
+      );
       expect(response.status()).toBe(201);
       created = ((await response.json()) as { aircraft: { id: string } }).aircraft.id;
 
