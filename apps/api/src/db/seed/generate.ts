@@ -6,6 +6,7 @@ import {
   formatLocalDate,
   formatLocalTime,
   localDateRange,
+  suggestedBlockMinutes,
   toInstant,
   weekdayInZone,
   zonedTimeToInstant,
@@ -45,9 +46,6 @@ import { seededId } from "../ids.ts";
 /** Flights are generated for this many days either side of the reference date. */
 const DAYS_BEFORE = 2;
 const DAYS_AFTER = 6;
-
-/** Minutes added to pure cruise time for taxi, climb and descent. */
-const GROUND_AND_MANOEUVRE_MINUTES = 30;
 
 /**
  * Slack built into the ground time on top of the minimum turnaround.
@@ -156,9 +154,7 @@ export function buildRoutes(stations: readonly SeedStation[]): GeneratedRoute[] 
     }
 
     const distance = Math.round(distanceNm(origin, destination));
-    const block =
-      Math.round((distance / cruiseSpeedFor(plan.equipment)) * 60) +
-      GROUND_AND_MANOEUVRE_MINUTES;
+    const block = suggestedBlockMinutes(distance, cruiseSpeedFor(plan.equipment));
 
     // A route is directional: BEG-VIE and VIE-BEG are two reusable pairs.
     for (const [from, to] of [

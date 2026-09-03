@@ -124,6 +124,12 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "flight:cancel",
     "flight:delete_draft",
     "schedule:write",
+    // Opening a pair, too. Network planning owns the route map and always
+    // will, but a role trusted to publish the timetable on a pair cannot
+    // coherently be refused the pair itself -- and the charters and
+    // positioning legs this console files go to stations the network plan
+    // never planned for. The audit entry names who opened it.
+    "route:write",
     "crew:read",
     "booking:read",
     "alert:resolve",
