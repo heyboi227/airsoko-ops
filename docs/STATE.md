@@ -26,7 +26,7 @@ persisted. **Met** — pinned by acceptance tests at both the API and the browse
 | Recurring schedules: list, create, edit, delete                 | Done                               |
 | Occurrence generation over an explicit window                   | Done, decision 30                  |
 | Per-occurrence exceptions and the three edit scopes             | Done, Scenario C, migration `0005` |
-| `GET /api/routes`, so a flight or pattern can pick a pair       | Done, read-only                    |
+| `GET /api/routes`, so a flight or pattern can pick a pair       | Done, read-only at the gate        |
 
 ### Verified
 
@@ -81,9 +81,12 @@ season shortened by an edit survived a reseed; and `z.coerce.boolean()` read the
   a seat. Phase 6 supplies the data, not the rule.
 - **Crew is absent from the flight page** beyond a note saying Phase 5 brings it. The
   complement rules are in `policy.complement` and unused.
-- **Routes are read-only.** A route is a network-planning decision behind a schedule
-  rather than something a controller edits between flights. Picking one is what Phase 3
-  needs; creating and suspending them belongs with the network screens.
+- **A route can be filed, but not withdrawn.** `POST /api/routes` opens a pair from the
+  picker on the flight and schedule forms, both legs of it, and `route:write` now reaches
+  operations control as well as network planning — decision 33. Removing, suspending and
+  retiring one still belong with the network screens, because all three reach into the
+  schedules and flights already filed on the pair. So a mistyped pair persists; the guard
+  is the review before it is filed.
 - **Diversion sets the status and raises an alert but does not move the destination.**
   Re-routing a flight to another airport touches the rotation, the crew and the
   passengers, which is Phase 7's cross-module work.
@@ -138,6 +141,31 @@ own every column of a row the seed generated, read their SET block from the tabl
 (`ownEveryColumn` in `seed/upsert.ts`) rather than from a list kept by hand, so nothing a
 hand edit wrote outlives a reseed; a unit test holds that block to every column of both
 tables, so a column added to the schema is owned without being listed.
+
+---
+
+## Since Phase 3: a route can be opened
+
+Routes were read-only at the Phase 3 gate, which meant a service could be filed only on a
+pair the seed had generated — the schedule form offered the existing pairs and no way in
+(decision 33). `POST /api/routes` files one through the same pipeline as every other
+write, and the picker on the flight and schedule forms carries a **New route** button
+beside the field. The pair is still picked rather than typed: filing one is a second,
+deliberate step with its own review.
+
+The distance is derived from the two stations' coordinates rather than asked for, and the
+block time is offered from the planned type's cruise speed through `suggestedBlockMinutes`
+— which the seed's own route builder now reads too, so the thirty-minute ground allowance
+lives in one place instead of three. Both legs are filed together, because a route is
+directional and a service is not. `route:write` reaches operations control as well as
+network planning, for the reason decision 33 gives; Scenario G's boundary is unchanged.
+
+`evaluateSaveRoute` is 18 more unit tests: a duplicate pair, a pair to itself, a withdrawn
+endpoint, a block time no aeroplane could keep, and a sector nothing in the fleet reaches —
+that last one a warning, because filing a pair the fleet cannot fly is how a network plan
+starts. Ten acceptance tests cover the boundary, the refusals and the write, seven at the
+API and three through the browser, and migration `0007` puts routes under the change
+trigger so a pair opened in the console is recorded as seed data like everything else.
 
 ---
 

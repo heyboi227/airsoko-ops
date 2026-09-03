@@ -3,6 +3,7 @@ import { ACTIVE_FLIGHT_STATUSES } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
+import { GROUND_AND_MANOEUVRE_MINUTES, impliedCruiseKts } from "../network.ts";
 import { addMinutes, formatLocalTime, minutesBetween } from "../time.ts";
 import {
   FLIGHT_STATUS_LABELS,
@@ -107,8 +108,6 @@ export interface FlightScheduleContext {
 const IMPOSSIBLE_CRUISE_KTS = 700;
 const UNUSUALLY_FAST_KTS = 560;
 const UNUSUALLY_SLOW_KTS = 140;
-/** Taxi, climb and descent, excluded before an implied cruise speed is taken. */
-const GROUND_AND_MANOEUVRE_MINUTES = 30;
 /** Below this, nothing has left a gate and arrived anywhere. */
 const IMPLAUSIBLY_SHORT_BLOCK_MINUTES = 25;
 const IMPLAUSIBLY_LONG_BLOCK_MINUTES = 20 * 60;
@@ -183,8 +182,7 @@ export function evaluateFlightSchedule(
   const distance = Math.round(distanceNm(draft.origin, draft.destination));
 
   if (block > 0 && draft.origin.iataCode !== draft.destination.iataCode) {
-    const cruiseMinutes = block - GROUND_AND_MANOEUVRE_MINUTES;
-    const impliedKts = cruiseMinutes > 0 ? distance / (cruiseMinutes / 60) : Infinity;
+    const impliedKts = impliedCruiseKts(distance, block);
 
     if (block < IMPLAUSIBLY_SHORT_BLOCK_MINUTES || impliedKts > IMPOSSIBLE_CRUISE_KTS) {
       builder.add(

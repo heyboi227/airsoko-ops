@@ -6,6 +6,7 @@ export * from "./rules.ts";
 export * from "./airport.ts";
 export * from "./fleet.ts";
 export * from "./flight.ts";
+export * from "./route.ts";
 export * from "./schedule.ts";
 export * from "./auth.ts";
 export * from "./analytics.ts";

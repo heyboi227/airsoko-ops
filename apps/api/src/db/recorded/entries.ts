@@ -2,7 +2,12 @@ import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { and, asc, eq, ne, type InferInsertModel } from "drizzle-orm";
-import type { PgColumn, PgTable, PgUpdateSetSource } from "drizzle-orm/pg-core";
+import {
+  alias,
+  type PgColumn,
+  type PgTable,
+  type PgUpdateSetSource,
+} from "drizzle-orm/pg-core";
 import type { Executor } from "../client.ts";
 import {
   aircraft,
@@ -14,6 +19,7 @@ import {
   flightInstances,
   flightStatusEvents,
   recurringSchedules,
+  routes,
   seats,
 } from "../schema/index.ts";
 
@@ -50,6 +56,7 @@ export const RECORDED_DIRECTORY = resolve(
 export const RECORDED_KINDS = [
   "country",
   "airport",
+  "route",
   "aircraft",
   "aircraft_cabin",
   "schedule",
@@ -61,6 +68,7 @@ export type RecordedKind = (typeof RECORDED_KINDS)[number];
 const DIRECTORY_FOR_KIND: Readonly<Record<RecordedKind, string>> = {
   country: "countries",
   airport: "airports",
+  route: "routes",
   aircraft: "aircraft",
   aircraft_cabin: "aircraft-cabins",
   schedule: "schedules",
@@ -80,6 +88,7 @@ export const KIND_FOR_TABLE: Readonly<
 > = {
   countries: { kind: "country" },
   airports: { kind: "airport" },
+  routes: { kind: "route" },
   aircraft: { kind: "aircraft" },
   aircraft_cabins: { kind: "aircraft_cabin" },
   seats: { kind: "aircraft_cabin", parentKey: "cabin_id" },
@@ -173,6 +182,49 @@ const airport: KindOps = {
     await executor.delete(airports).where(eq(airports.id, key));
   },
   labelOf: (raw) => `${text(raw.iata_code)} ${text(raw.name)}`,
+};
+
+const routeOrigin = alias(airports, "recorded_route_origin");
+const routeDestination = alias(airports, "recorded_route_destination");
+
+/**
+ * A route's own row is the whole of it: the pair, the distance and the block.
+ *
+ * The id is derived from the pair -- `seededId("route", "BEG-VIE")`, in the
+ * seed and in the endpoint alike -- so an upsert by id is also an upsert by
+ * pair, and a recorded route cannot arrive beside a seeded row holding the
+ * same pair under a different id.
+ */
+const route: KindOps = {
+  load: async (executor, key) => {
+    const [found] = await executor
+      .select({
+        row: routes,
+        originIata: routeOrigin.iataCode,
+        destinationIata: routeDestination.iataCode,
+      })
+      .from(routes)
+      .innerJoin(routeOrigin, eq(routeOrigin.id, routes.originAirportId))
+      .innerJoin(routeDestination, eq(routeDestination.id, routes.destinationAirportId))
+      .where(eq(routes.id, key))
+      .limit(1);
+    return found
+      ? {
+          kind: "route",
+          label: `${found.originIata}-${found.destinationIata}`,
+          row: found.row,
+        }
+      : null;
+  },
+  upsert: (executor, entry) =>
+    upsertById(executor, routes, entry.row as InferInsertModel<typeof routes>),
+  remove: async (executor, key) => {
+    await executor.delete(routes).where(eq(routes.id, key));
+  },
+  // The trigger's snapshot holds airport ids rather than codes, and nothing
+  // reads a label back -- so a tombstone for a route names its id and leaves
+  // the pair to the file it replaces.
+  labelOf: (raw) => `route ${text(raw.id)}`,
 };
 
 const airframe: KindOps = {
@@ -366,6 +418,7 @@ const amenityAssignment: KindOps = {
 export const KIND_OPS: Readonly<Record<RecordedKind, KindOps>> = {
   country,
   airport,
+  route,
   aircraft: airframe,
   aircraft_cabin: aircraftCabin,
   schedule,

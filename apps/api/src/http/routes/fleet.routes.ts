@@ -545,6 +545,9 @@ fleetRouter.get(
         variant: aircraftTypes.variant,
         bodyType: aircraftTypes.bodyType,
         rangeNm: aircraftTypes.rangeNm,
+        // Read by the route form, which offers a block time from the cruise
+        // speed of the type a pair is planned on.
+        cruiseSpeedKts: aircraftTypes.cruiseSpeedKts,
       })
       .from(aircraftTypes)
       .orderBy(aircraftTypes.manufacturer, aircraftTypes.model);

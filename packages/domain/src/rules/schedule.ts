@@ -10,6 +10,7 @@ import { formatOperatingDays } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
+import { impliedCruiseKts } from "../network.ts";
 import {
   addLocalDays,
   formatLocalTime,
@@ -168,7 +169,6 @@ export interface ScheduleDefinitionContext {
 }
 
 const IMPOSSIBLE_CRUISE_KTS = 700;
-const GROUND_AND_MANOEUVRE_MINUTES = 30;
 const IMPLAUSIBLY_SHORT_BLOCK_MINUTES = 25;
 
 export function evaluateScheduleDefinition(
@@ -232,8 +232,7 @@ export function evaluateScheduleDefinition(
     context.occurrences.length > 0 &&
     draft.origin.iataCode !== draft.destination.iataCode
   ) {
-    const cruiseMinutes = block - GROUND_AND_MANOEUVRE_MINUTES;
-    const impliedKts = cruiseMinutes > 0 ? distance / (cruiseMinutes / 60) : Infinity;
+    const impliedKts = impliedCruiseKts(distance, block);
 
     if (block < IMPLAUSIBLY_SHORT_BLOCK_MINUTES || impliedKts > IMPOSSIBLE_CRUISE_KTS) {
       builder.add(

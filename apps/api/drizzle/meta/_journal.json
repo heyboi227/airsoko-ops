@@ -50,6 +50,13 @@
       "when": 1788366019847,
       "tag": "0006_row_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788452419847,
+      "tag": "0007_record_routes",
+      "breakpoints": true
     }
   ]
 }

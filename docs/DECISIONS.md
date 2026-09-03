@@ -716,3 +716,49 @@ is on in development only, off with `SEED_RECORDING=off`, and a request can decl
 `x-airsoko-recording: off`, which the acceptance suite sends on everything so its
 fixtures never reach the committed data. Two machines editing the same entry meet as a
 merge conflict on one file, which is the right place to meet.
+
+---
+
+## 33. A route can be opened, and the pair is filed both ways
+
+**Decided.** `POST /api/routes` files a pair through the mutation pipeline, and the route
+picker on the flight and schedule forms has a **New route** button beside it. Routes were
+read-only through Phase 3 on the grounds that a pair is a network-planning decision rather
+than something a controller edits between flights (see the Phase 3 simplifications). That
+reasoning was right about _who_ and wrong about _whether_: with no way to file one, a
+service could be filed only on a pair the seed had generated, so the console could not
+open a destination at all.
+
+**A route is still picked, never typed.** The pair, its distance and its planned block are
+facts a flight form has no business inventing, so filing one is a second, deliberate step
+with its own review and its own permission -- not two free-text codes on the schedule form.
+
+**The distance is derived; the block time is asked for.** The great-circle distance between
+two stations already on file is a fact about the world, so the endpoint computes it with
+the kernel's own `distanceNm` and the form only says what it will be. Decision 13, applied
+to the one number a route adds. How long the airline allows for the sector is its own
+decision, so the block _is_ an input -- offered from the planned type's cruise speed
+(`suggestedBlockMinutes`, now shared with the seed's route builder, which had its own copy
+of the thirty-minute ground allowance) and the operator's the moment they touch it.
+
+**Both legs, one act.** A route is directional -- BEG-VIE and VIE-BEG are two rows, because
+the block, the equipment and the season belong to a leg. A service is not: an airline that
+starts flying BEG-TGD starts flying TGD-BEG, which is why the seed's own builder makes both.
+So the return leg is filed alongside by default, inherits the same figures, is named as a
+consequence on the review, and is skipped when it is already on file. The alternative was a
+warning on every first leg ever filed, which is noise rather than a rule.
+
+**`route:write` now reaches operations control**, alongside network planning. A role trusted
+to publish the timetable on a pair cannot coherently be refused the pair, and the charters
+and positioning legs this console files go to stations the network plan never planned for.
+Scenario G's boundary is untouched: a booking administrator is refused, in preview mode as
+much as on apply.
+
+**What is not built.** Removing, suspending or retiring a route -- all three reach into the
+schedules and flights already filed on the pair, which is the network screens' work. So a
+mistyped pair persists, and the guard against one is the review before it is filed: the
+stations, the distance, the block and the return leg, with the rules' own findings under
+them. Two of those rules exist for exactly this: `ROUTE_PAIR_IN_USE` refuses a duplicate by
+name, and `ROUTE_BLOCK_IMPLAUSIBLE` refuses a block time no aeroplane could keep. The reach
+check warns rather than refuses, because filing a pair the current fleet cannot fly is how a
+network plan starts.

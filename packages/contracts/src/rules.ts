@@ -65,6 +65,16 @@ export const RULE_CODES = [
   "AIRPORT_HAS_UPCOMING_FLIGHTS",
   "AIRPORT_HAS_ROUTES",
 
+  // --- Routes --------------------------------------------------------------
+  // A route is the pair, and the pair is what can be wrong about it: filed
+  // twice, filed to itself, filed against a station that has been withdrawn,
+  // or filed with a block time no aeroplane could keep.
+  "ROUTE_PAIR_IN_USE",
+  "ROUTE_SAME_ORIGIN_AND_DESTINATION",
+  "ROUTE_ENDPOINT_WITHDRAWN",
+  "ROUTE_BLOCK_IMPLAUSIBLE",
+  "ROUTE_BEYOND_FLEET_RANGE",
+
   // --- Crew ----------------------------------------------------------------
   "CREW_POSITION_UNFILLED",
   "CREW_OVERLAPPING_DUTY",
