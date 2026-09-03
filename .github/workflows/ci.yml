@@ -87,6 +87,11 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run db:migrate
       - run: npm run db:seed
+      # `production-build.api.spec.ts` boots this artifact and asks it whether
+      # it can still open the files it reads. The `build` job proves esbuild
+      # exits zero; only running the bundle proves it resolves its own paths,
+      # and every other spec drives the dev server from `src/`.
+      - run: npm run build --workspace @airsoko/api
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v7
         if: failure()

@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { apiPath } from "../../../paths.ts";
 import { ISO_3166_1_ALPHA2 } from "./iso3166.ts";
 import { AIR_SOKO_STATIONS, type StationRole } from "./stations.ts";
 
@@ -26,10 +25,10 @@ export interface ReferenceAirport {
   timeZone: string;
 }
 
-const REFERENCE_PATH = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "./airports.reference.json",
-);
+// Addressed from the package root, not from this file: the production build
+// bundles this module into `dist/main.js`, where a path relative to the module
+// resolves to `dist/`. See `src/paths.ts`.
+const REFERENCE_PATH = apiPath("src/db/seed/reference/airports.reference.json");
 
 let cache: ReadonlyMap<string, ReferenceAirport> | null = null;
 
