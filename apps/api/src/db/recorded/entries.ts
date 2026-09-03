@@ -1,6 +1,5 @@
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { and, asc, eq, ne, type InferInsertModel } from "drizzle-orm";
 import {
   alias,
@@ -8,6 +7,7 @@ import {
   type PgTable,
   type PgUpdateSetSource,
 } from "drizzle-orm/pg-core";
+import { apiPath } from "../../paths.ts";
 import type { Executor } from "../client.ts";
 import {
   aircraft,
@@ -47,10 +47,10 @@ import {
  * records five tables without knowing this module exists.
  */
 
-export const RECORDED_DIRECTORY = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../seed/recorded",
-);
+// Addressed from the package root, not from this file, so the production
+// build reads and writes the same directory the dev server does. See
+// `src/paths.ts`.
+export const RECORDED_DIRECTORY: string = apiPath("src/db/seed/recorded");
 
 /** In dependency order: an entry is replayed after everything it refers to. */
 export const RECORDED_KINDS = [

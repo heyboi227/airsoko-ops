@@ -1,12 +1,13 @@
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { apiPath } from "./paths.ts";
 
 // The repository root holds the single .env; every workspace reads that one
-// file rather than keeping its own copy to drift out of sync.
-const here = dirname(fileURLToPath(import.meta.url));
-loadDotenv({ path: resolve(here, "../../../.env"), quiet: true });
+// file rather than keeping its own copy to drift out of sync. Two levels up
+// from the package, not from this file -- which is the same directory either
+// way today, and would quietly stop being so the moment the build emitted
+// `main.js` at another depth. See `src/paths.ts`.
+loadDotenv({ path: apiPath("../../.env"), quiet: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

@@ -1,11 +1,12 @@
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { closeDatabase, db } from "./client.ts";
 import { logger } from "../logger.ts";
+import { apiPath } from "../paths.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const migrationsFolder = resolve(here, "../../drizzle");
+// From the package root, like every other path this API opens. `db:migrate`
+// only ever runs under `tsx`, so this one was never wrong -- but the rule is
+// worth keeping uniform. See `src/paths.ts`.
+const migrationsFolder = apiPath("drizzle");
 
 migrate(db, { migrationsFolder })
   .then(async () => {
