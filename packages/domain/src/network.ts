@@ -27,8 +27,23 @@ export function impliedCruiseKts(distance: number, block: number): number {
 }
 
 /**
+ * The grid a published timetable is written to, in minutes.
+ *
+ * Airlines publish departures and arrivals to the five minutes, so anything
+ * that *proposes* a scheduled time -- a suggested block, a seeded slot -- lands
+ * on it. An estimate or an actual does not: a delay is as long as it is.
+ */
+export const TIMETABLE_GRID_MINUTES = 5;
+
+/** `minutes` moved to the nearest point on the timetable grid. */
+export function roundToTimetableGrid(minutes: number): number {
+  return Math.round(minutes / TIMETABLE_GRID_MINUTES) * TIMETABLE_GRID_MINUTES;
+}
+
+/**
  * A starting point for a route's block time: the cruise the distance needs at
- * this type's speed, plus the ground allowance, rounded to the minute.
+ * this type's speed, plus the ground allowance, rounded to the five minutes a
+ * timetable publishes -- so an arrival derived from it lands on the grid too.
  *
  * A suggestion and nothing more. What the airline publishes is its own
  * decision -- padded for a congested hub, tightened on a sector it knows --
@@ -37,5 +52,5 @@ export function impliedCruiseKts(distance: number, block: number): number {
  */
 export function suggestedBlockMinutes(distance: number, cruiseSpeedKts: number): number {
   if (!(cruiseSpeedKts > 0)) return 0;
-  return Math.round((distance / cruiseSpeedKts) * 60) + GROUND_AND_MANOEUVRE_MINUTES;
+  return roundToTimetableGrid((distance / cruiseSpeedKts) * 60 + GROUND_AND_MANOEUVRE_MINUTES);
 }

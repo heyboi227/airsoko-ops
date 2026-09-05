@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import {
+  TIMETABLE_GRID_MINUTES,
   addMinutes,
   distanceNm,
   epochMs,
   formatLocalDate,
   formatLocalTime,
   localDateRange,
+  roundToTimetableGrid,
   suggestedBlockMinutes,
   toInstant,
   weekdayInZone,
@@ -154,6 +156,8 @@ export function buildRoutes(stations: readonly SeedStation[]): GeneratedRoute[] 
     }
 
     const distance = Math.round(distanceNm(origin, destination));
+    // Already on the five-minute grid a timetable publishes, so a departure on
+    // the grid plus this block is an arrival on it too.
     const block = suggestedBlockMinutes(distance, cruiseSpeedFor(plan.equipment));
 
     // A route is directional: BEG-VIE and VIE-BEG are two reusable pairs.
@@ -203,6 +207,17 @@ function toLocalTime(minutesFromMidnight: number): string {
 }
 
 /**
+ * The first published slot at or after `instant`. A return leg leaves at the
+ * next five minutes the turnaround allows, never at the odd minute the
+ * arithmetic lands on -- and rounding up rather than to nearest is what keeps
+ * the minimum turnaround honoured.
+ */
+function nextTimetableSlot(instant: string): string {
+  const gridMs = TIMETABLE_GRID_MINUTES * 60_000;
+  return toInstant(Math.ceil(epochMs(instant) / gridMs) * gridMs);
+}
+
+/**
  * Departure times for one route, spread across the operating day.
  *
  * A first attempt banked everything into a morning and an evening wave, the
@@ -238,7 +253,7 @@ function departureSlots(frequency: 1 | 2 | 3, flightNumber: number): string[] {
   const interval = frequency === 2 ? 7 * 60 : 5 * 60 + 30;
 
   const first = FIRST_DEPARTURE + Math.floor(unit(`slot:${flightNumber}`) * startWindow);
-  const rounded = Math.round(first / 5) * 5;
+  const rounded = roundToTimetableGrid(first);
 
   return Array.from({ length: frequency }, (_, index) =>
     toLocalTime(rounded + index * interval),
@@ -252,6 +267,11 @@ function departureSlots(frequency: 1 | 2 | 3, flightNumber: number): string[] {
  * stored. The return leg's slot is derived once, on the reference date, from
  * the outbound arrival plus a turnaround -- after which it is a published
  * local time in its own right and flexes across DST like any other.
+ *
+ * Every time here sits on the five-minute grid a timetable is written to:
+ * the outbound slot is hashed onto it, the block is a multiple of it, and the
+ * return leg takes the first slot the turnaround allows. Nothing downstream
+ * needs to round -- a dated flight is a published time plus a whole block.
  */
 export function buildSchedules(
   routes: readonly GeneratedRoute[],
@@ -288,7 +308,9 @@ export function buildSchedules(
       // return slot; from then on these are published local times.
       const outDeparture = zonedTimeToInstant(referenceDate, departureLocal, origin.timeZone);
       const outArrival = addMinutes(outDeparture.instant, outbound.blockMinutes);
-      const returnDeparture = addMinutes(outArrival, turnaround + GROUND_BUFFER_MINUTES);
+      const returnDeparture = nextTimetableSlot(
+        addMinutes(outArrival, turnaround + GROUND_BUFFER_MINUTES),
+      );
       const returnArrival = addMinutes(returnDeparture, inbound.blockMinutes);
 
       const outFlightNumber = `${MARKETING_CODE}${plan.flightNumber + slotIndex * 20}`;
