@@ -84,6 +84,15 @@ export default tseslint.config(
           message:
             "Kernel rules must be deterministic: take the evaluation instant as an argument instead of reading the clock.",
         },
+        // The same promise for wording. A finding must read the same on every
+        // machine, and `toLocaleString()` with no locale follows the host: 1004
+        // is "1,004" in one office and "1.004" in the next.
+        {
+          selector:
+            "CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/][arguments.length=0]",
+          message:
+            "Kernel rules must be deterministic: render figures with grouped() from format.ts instead of following the host locale.",
+        },
       ],
     },
   },

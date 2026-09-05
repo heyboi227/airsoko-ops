@@ -27,6 +27,7 @@ import {
 import { distanceNm, suggestedBlockMinutes } from "@airsoko/domain";
 import { apiRequest } from "../../api/client.ts";
 import { useMutationFlow } from "../../api/useMutationFlow.ts";
+import { grouped } from "../../format.ts";
 import { MutationConfirmDialog } from "../MutationConfirmDialog.tsx";
 
 /**
@@ -197,7 +198,7 @@ export function RouteFormDialog({
                 helperText={
                   blockTouched || block.length === 0 || !chosenType || distance === null
                     ? "Gate to gate, as the timetable will publish it."
-                    : `From the ${chosenType.icaoTypeCode}'s cruise over ${distance.toLocaleString()} nm.`
+                    : `From the ${chosenType.icaoTypeCode}'s cruise over ${grouped(distance)} nm.`
                 }
                 sx={{ flex: 1 }}
               />
@@ -237,7 +238,7 @@ export function RouteFormDialog({
               ) : (
                 <>
                   <Box component="span" sx={{ fontWeight: 600 }}>
-                    {pair} is {distance.toLocaleString()} nm
+                    {pair} is {grouped(distance)} nm
                   </Box>{" "}
                   great-circle, from the stations&rsquo; own coordinates. A route is
                   directional, which is why the return leg is a second pair rather than a flag
@@ -276,8 +277,8 @@ export function RouteFormDialog({
           title={`File ${pair}?`}
           intentDescription={
             <Typography component="span" variant="body2">
-              {pair}, {distance?.toLocaleString()} nm, with a {flow.payload.blockMinutes}-minute
-              block
+              {pair}, {distance === null ? null : grouped(distance)} nm, with a{" "}
+              {flow.payload.blockMinutes}-minute block
               {chosenType ? `, planned on the ${chosenType.icaoTypeCode}` : ""}. Filed as{" "}
               {flow.payload.status}
               {flow.payload.includeReturn

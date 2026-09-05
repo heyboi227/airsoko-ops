@@ -2,6 +2,7 @@ import type { Id, RouteStatus } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
+import { grouped } from "../format.ts";
 import { impliedCruiseKts } from "../network.ts";
 import type { OperationalPolicy } from "../policy.ts";
 
@@ -139,22 +140,22 @@ export function evaluateSaveRoute(draft: RouteDraft, context: SaveRouteContext):
   const distance = Math.round(distanceNm(draft.origin, draft.destination));
   const implied = impliedCruiseKts(distance, draft.blockMinutes);
   const impliedLabel = Number.isFinite(implied)
-    ? `${Math.round(implied).toLocaleString()} kt`
+    ? `${grouped(implied)} kt`
     : "an infinite speed";
 
   if (draft.blockMinutes < IMPLAUSIBLY_SHORT_BLOCK_MINUTES || implied > IMPOSSIBLE_CRUISE_KTS) {
     builder.add(
       blocking(
         "ROUTE_BLOCK_IMPLAUSIBLE",
-        `${draft.blockMinutes} minutes cannot cover ${distance.toLocaleString()} nm`,
-        `${pair} is ${distance.toLocaleString()} nm. Allowing ${IMPLAUSIBLY_SHORT_BLOCK_MINUTES} minutes is short of a gate-to-gate movement of any length, and a ${draft.blockMinutes}-minute block over this distance implies ${impliedLabel} in the cruise. Nothing in commercial service does that.`,
+        `${draft.blockMinutes} minutes cannot cover ${grouped(distance)} nm`,
+        `${pair} is ${grouped(distance)} nm. Allowing ${IMPLAUSIBLY_SHORT_BLOCK_MINUTES} minutes is short of a gate-to-gate movement of any length, and a ${draft.blockMinutes}-minute block over this distance implies ${impliedLabel} in the cruise. Nothing in commercial service does that.`,
       ),
     );
   } else if (implied > UNUSUALLY_FAST_KTS || implied < UNUSUALLY_SLOW_KTS) {
     builder.add(
       warning(
         "ROUTE_BLOCK_IMPLAUSIBLE",
-        `${draft.blockMinutes} minutes is an unusual block for ${distance.toLocaleString()} nm`,
+        `${draft.blockMinutes} minutes is an unusual block for ${grouped(distance)} nm`,
         `It implies ${impliedLabel} in the cruise, outside the ${UNUSUALLY_SLOW_KTS}-${UNUSUALLY_FAST_KTS} kt a scheduled sector normally averages. Every flight filed on this route inherits the figure.`,
       ),
     );
@@ -201,7 +202,7 @@ function reachEvaluation(
         warning(
           "ROUTE_BEYOND_FLEET_RANGE",
           `${chosen.typeCode} does not reach ${pair}`,
-          `${distance.toLocaleString()} nm against ${Math.round(usable(chosen)).toLocaleString()} nm usable for a ${chosen.typeCode} (${usableLabel}). Planning the route on this type would leave every flight filed from it unassignable to one.`,
+          `${grouped(distance)} nm against ${grouped(usable(chosen))} nm usable for a ${chosen.typeCode} (${usableLabel}). Planning the route on this type would leave every flight filed from it unassignable to one.`,
         ),
       );
     }
@@ -218,7 +219,7 @@ function reachEvaluation(
       warning(
         "ROUTE_BEYOND_FLEET_RANGE",
         `Nothing in the fleet reaches ${pair}`,
-        `${distance.toLocaleString()} nm is beyond the ${Math.round(usable(furthest)).toLocaleString()} nm usable for a ${furthest.typeCode}, the longest-legged type on the books (${usableLabel}). The route can be filed as a plan; no flight on it can be assigned an aircraft until the fleet can fly it.`,
+        `${grouped(distance)} nm is beyond the ${grouped(usable(furthest))} nm usable for a ${furthest.typeCode}, the longest-legged type on the books (${usableLabel}). The route can be filed as a plan; no flight on it can be assigned an aircraft until the fleet can fly it.`,
       ),
     );
   }

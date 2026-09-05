@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { isBlocking, warningCodes } from "@airsoko/contracts";
 import { DEFAULT_POLICY } from "../policy.ts";
-import { impliedCruiseKts, suggestedBlockMinutes } from "../network.ts";
+import {
+  TIMETABLE_GRID_MINUTES,
+  impliedCruiseKts,
+  roundToTimetableGrid,
+  suggestedBlockMinutes,
+} from "../network.ts";
 import {
   evaluateSaveRoute,
   type ExistingRoute,
@@ -245,9 +250,32 @@ describe("evaluateSaveRoute", () => {
 });
 
 describe("block time and distance", () => {
-  it("suggests the cruise the distance needs, plus the ground allowance", () => {
-    // 251 nm at 447 kt is 34 minutes in the air, 64 gate to gate.
-    expect(suggestedBlockMinutes(251, 447)).toBe(64);
+  it("suggests the cruise the distance needs, plus the ground allowance, on the timetable grid", () => {
+    // 251 nm at 447 kt is 33.7 minutes in the air, 63.7 gate to gate: a
+    // timetable publishes that as 65, not 64.
+    expect(suggestedBlockMinutes(251, 447)).toBe(65);
+  });
+
+  it("moves a figure to the nearest five minutes", () => {
+    expect(roundToTimetableGrid(63.7)).toBe(65);
+    expect(roundToTimetableGrid(62.4)).toBe(60);
+    expect(roundToTimetableGrid(133)).toBe(135);
+    expect(roundToTimetableGrid(0)).toBe(0);
+  });
+
+  it("lands every suggestion on the grid, whatever the distance and the type", () => {
+    const sectors: [number, number][] = [
+      [112, 275],
+      [768, 447],
+      [1_240, 455],
+      [4_050, 470],
+    ];
+    for (const [distance, speed] of sectors) {
+      expect(
+        suggestedBlockMinutes(distance, speed) % TIMETABLE_GRID_MINUTES,
+        `${distance} nm`,
+      ).toBe(0);
+    }
   });
 
   it("suggests nothing for a speed of zero rather than an infinite block", () => {
@@ -255,9 +283,10 @@ describe("block time and distance", () => {
   });
 
   it("round-trips: a suggested block implies roughly the speed it came from", () => {
+    // The grid can move the block by up to two and a half minutes either way,
+    // which over a half-hour cruise is a few percent of the speed.
     const implied = impliedCruiseKts(251, suggestedBlockMinutes(251, 447));
-    expect(implied).toBeGreaterThan(430);
-    expect(implied).toBeLessThan(460);
+    expect(Math.abs(implied - 447) / 447).toBeLessThan(0.1);
   });
 
   it("reports an infinite implied speed when the block leaves no cruise", () => {

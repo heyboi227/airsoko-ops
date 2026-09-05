@@ -10,6 +10,7 @@ import { formatOperatingDays } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
+import { grouped } from "../format.ts";
 import { impliedCruiseKts } from "../network.ts";
 import {
   addLocalDays,
@@ -238,8 +239,8 @@ export function evaluateScheduleDefinition(
       builder.add(
         blocking(
           "SCHEDULE_DURATION_IMPLAUSIBLE",
-          `${block} minutes cannot cover ${distance.toLocaleString()} nm`,
-          `${draft.origin.iataCode}-${draft.destination.iataCode} is ${distance.toLocaleString()} nm, which a ${block}-minute block would fly at ${Number.isFinite(impliedKts) ? Math.round(impliedKts).toLocaleString() : "an infinite"} kt. Check the arrival time and the next-day flag.`,
+          `${block} minutes cannot cover ${grouped(distance)} nm`,
+          `${draft.origin.iataCode}-${draft.destination.iataCode} is ${grouped(distance)} nm, which a ${block}-minute block would fly at ${Number.isFinite(impliedKts) ? grouped(impliedKts) : "an infinite"} kt. Check the arrival time and the next-day flag.`,
           extras,
         ),
       );
