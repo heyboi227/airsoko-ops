@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   aircraftServiceabilitySchema,
@@ -239,9 +239,23 @@ fleetRouter.post(
 
 // --- helpers ---------------------------------------------------------------
 
-/** Sectors this airframe is still due to fly. */
+/**
+ * Sectors this airframe is still due to fly.
+ *
+ * "Due to fly" as the fleet state reads it: by the departure now expected --
+ * actual if it has one, else estimated, else scheduled. A delayed flight past
+ * its published time has not gone anywhere, and withdrawing its airframe
+ * strands it like any other. Filtering on the scheduled time alone dropped
+ * exactly those, so for the minutes between the two times the warning named
+ * the sector *after* the one the fleet page showed as next.
+ */
 async function upcomingSectors(aircraftId: string, now: string, executor: Executor = db) {
   const origin = airports;
+  const expectedDeparture = sql`coalesce(
+    ${flightInstances.actualDeparture},
+    ${flightInstances.estimatedDeparture},
+    ${flightInstances.scheduledDeparture}
+  )`;
   const rows = await executor
     .select({
       flightId: flightInstances.id,
@@ -263,11 +277,11 @@ async function upcomingSectors(aircraftId: string, now: string, executor: Execut
     .where(
       and(
         eq(flightInstances.aircraftId, aircraftId),
-        gte(flightInstances.scheduledDeparture, now),
+        gt(expectedDeparture, now),
         ne(flightInstances.status, "cancelled"),
       ),
     )
-    .orderBy(flightInstances.scheduledDeparture);
+    .orderBy(expectedDeparture);
 
   return rows;
 }
