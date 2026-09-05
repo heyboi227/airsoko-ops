@@ -208,3 +208,10 @@ doing", and one of "what is this flight" beside it in `loadFlights`.
 The seed is deterministic given a reference date — same-day reseeds are byte-identical
 by checksum. The live map spike's findings are decision 16; the spike itself was
 deleted.
+
+Every published time the seed writes sits on the five-minute grid a timetable is
+written to: the departure slot is hashed onto it, `suggestedBlockMinutes` rounds the
+block to it (so the route form's suggestion lands there too), and a return leg takes the
+first slot after the turnaround. Estimates and actuals stay to the minute, because a
+delay is as long as it is. `generate.test.ts` holds every route, schedule and dated
+flight to the grid.
