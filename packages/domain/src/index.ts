@@ -1,5 +1,6 @@
 export * from "./geo.ts";
 export * from "./time.ts";
+export * from "./format.ts";
 export * from "./policy.ts";
 export * from "./network.ts";
 export * from "./intent.ts";

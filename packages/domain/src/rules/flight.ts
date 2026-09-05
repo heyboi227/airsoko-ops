@@ -3,6 +3,7 @@ import { ACTIVE_FLIGHT_STATUSES } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
+import { grouped } from "../format.ts";
 import { GROUND_AND_MANOEUVRE_MINUTES, impliedCruiseKts } from "../network.ts";
 import { addMinutes, formatLocalTime, minutesBetween } from "../time.ts";
 import {
@@ -188,8 +189,8 @@ export function evaluateFlightSchedule(
       builder.add(
         blocking(
           "SCHEDULE_DURATION_IMPLAUSIBLE",
-          `${block} minutes cannot cover ${distance.toLocaleString()} nm`,
-          `${draft.origin.iataCode}-${draft.destination.iataCode} is ${distance.toLocaleString()} nm. Allowing ${GROUND_AND_MANOEUVRE_MINUTES} minutes for taxi, climb and descent, a ${block}-minute block implies ${Number.isFinite(impliedKts) ? Math.round(impliedKts).toLocaleString() : "an infinite"} kt cruise. Nothing in the fleet does that.`,
+          `${block} minutes cannot cover ${grouped(distance)} nm`,
+          `${draft.origin.iataCode}-${draft.destination.iataCode} is ${grouped(distance)} nm. Allowing ${GROUND_AND_MANOEUVRE_MINUTES} minutes for taxi, climb and descent, a ${block}-minute block implies ${Number.isFinite(impliedKts) ? grouped(impliedKts) : "an infinite"} kt cruise. Nothing in the fleet does that.`,
           extras,
         ),
       );
@@ -198,7 +199,7 @@ export function evaluateFlightSchedule(
         blocking(
           "SCHEDULE_DURATION_IMPLAUSIBLE",
           `${Math.round(block / 60)} hours gate to gate`,
-          `${draft.flightNumber} would block ${Math.round(block / 60)} hours for ${distance.toLocaleString()} nm. Check the arrival time and the next-day flag.`,
+          `${draft.flightNumber} would block ${Math.round(block / 60)} hours for ${grouped(distance)} nm. Check the arrival time and the next-day flag.`,
           extras,
         ),
       );
@@ -206,8 +207,8 @@ export function evaluateFlightSchedule(
       builder.add(
         warning(
           "SCHEDULE_DURATION_IMPLAUSIBLE",
-          `Tight block for ${distance.toLocaleString()} nm`,
-          `${block} minutes implies a ${Math.round(impliedKts).toLocaleString()} kt cruise over ${draft.origin.iataCode}-${draft.destination.iataCode}. Only the widebody comes close, and not against a headwind.`,
+          `Tight block for ${grouped(distance)} nm`,
+          `${block} minutes implies a ${grouped(impliedKts)} kt cruise over ${draft.origin.iataCode}-${draft.destination.iataCode}. Only the widebody comes close, and not against a headwind.`,
           extras,
         ),
       );
@@ -215,8 +216,8 @@ export function evaluateFlightSchedule(
       builder.add(
         warning(
           "SCHEDULE_DURATION_IMPLAUSIBLE",
-          `Generous block for ${distance.toLocaleString()} nm`,
-          `${block} minutes implies a ${Math.round(impliedKts).toLocaleString()} kt cruise. That is a lot of padding for ${draft.origin.iataCode}-${draft.destination.iataCode}, and it holds an airframe on the ground at the far end.`,
+          `Generous block for ${grouped(distance)} nm`,
+          `${block} minutes implies a ${grouped(impliedKts)} kt cruise. That is a lot of padding for ${draft.origin.iataCode}-${draft.destination.iataCode}, and it holds an airframe on the ground at the far end.`,
           extras,
         ),
       );
@@ -295,7 +296,7 @@ export function evaluateFlightSchedule(
   builder.expect(
     consequence(
       draft.flightId ? "flight_rescheduled" : "flight_created",
-      `${draft.flightNumber} ${draft.origin.iataCode}-${draft.destination.iataCode} on ${draft.serviceDate}, ${formatLocalTime(draft.scheduledDeparture, draft.origin.timeZone)} local to ${formatLocalTime(draft.scheduledArrival, draft.destination.timeZone)} local (${block} minutes block, ${distance.toLocaleString()} nm)`,
+      `${draft.flightNumber} ${draft.origin.iataCode}-${draft.destination.iataCode} on ${draft.serviceDate}, ${formatLocalTime(draft.scheduledDeparture, draft.origin.timeZone)} local to ${formatLocalTime(draft.scheduledArrival, draft.destination.timeZone)} local (${block} minutes block, ${grouped(distance)} nm)`,
     ),
   );
 

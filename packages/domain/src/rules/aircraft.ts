@@ -3,6 +3,7 @@ import { SERVICEABILITY_LABELS, UNSERVICEABLE } from "@airsoko/contracts";
 import { EvaluationBuilder, blocking, consequence, resourceRef, warning } from "../intent.ts";
 import type { Evaluation } from "../intent.ts";
 import { distanceNm } from "../geo.ts";
+import { grouped } from "../format.ts";
 import { epochMs, gapMinutes, intervalsOverlap, minutesBetween } from "../time.ts";
 import { maintenanceStanding, type MaintenanceLimits } from "../fleet.ts";
 import type { OperationalPolicy } from "../policy.ts";
@@ -230,7 +231,7 @@ export function evaluateAircraftAssignment(
       blocking(
         "AIRCRAFT_RANGE_INSUFFICIENT",
         `${sector.originIata}-${sector.destinationIata} is beyond this type's range`,
-        `${Math.round(distance).toLocaleString()} nm against ${Math.round(usableRange).toLocaleString()} nm usable for a ${aircraft.typeCode} (${Math.round(policy.range.usableFraction * 100)}% of a published ${aircraft.rangeNm.toLocaleString()} nm).`,
+        `${grouped(distance)} nm against ${grouped(usableRange)} nm usable for a ${aircraft.typeCode} (${Math.round(policy.range.usableFraction * 100)}% of a published ${grouped(aircraft.rangeNm)} nm).`,
         { subject },
       ),
     );
@@ -242,7 +243,7 @@ export function evaluateAircraftAssignment(
       warning(
         "AIRCRAFT_RANGE_INSUFFICIENT",
         `Close to the range limit`,
-        `${Math.round(distance).toLocaleString()} nm leaves little margin against ${Math.round(usableRange).toLocaleString()} nm usable. Headwinds or a diversion would make this marginal.`,
+        `${grouped(distance)} nm leaves little margin against ${grouped(usableRange)} nm usable. Headwinds or a diversion would make this marginal.`,
         { subject },
       ),
     );
