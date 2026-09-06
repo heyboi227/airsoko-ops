@@ -28,6 +28,8 @@ import {
   isDelayed,
   partsInZone,
   resolveAmenities,
+  type ExistingCommitment,
+  type MaintenanceWindow,
 } from "@airsoko/domain";
 import {
   TERMINAL_FLIGHT_STATUSES,
@@ -51,6 +53,7 @@ import {
   amenityAssignments,
   flightInstances,
   flightStatusEvents,
+  maintenanceEvents,
   recurringSchedules,
   routes,
   users,
@@ -816,16 +819,27 @@ export async function loadNextSector(
   return row ?? null;
 }
 
-/** Sectors the airframe is committed to, excluding the one being assigned. */
-export async function loadCommitments(
-  aircraftId: string,
+/**
+ * Sectors each airframe is committed to, excluding the one being assigned.
+ *
+ * Keyed by airframe and loaded for many at once. The assignment picker ranks
+ * the whole fleet against one sector and the review of a single tail reads
+ * the same rows through this same query, so the two cannot disagree about
+ * what an aircraft is already doing.
+ */
+export async function loadCommitmentsByAircraft(
+  aircraftIds: readonly string[],
   windowStart: string,
   windowEnd: string,
   excludeFlightId: string,
   executor: Executor = db,
-) {
-  return executor
+): Promise<Map<string, ExistingCommitment[]>> {
+  const byAircraft = new Map<string, ExistingCommitment[]>();
+  if (aircraftIds.length === 0) return byAircraft;
+
+  const rows = await executor
     .select({
+      aircraftId: flightInstances.aircraftId,
       flightId: flightInstances.id,
       flightNumber: flightInstances.flightNumber,
       originIata: origin.iataCode,
@@ -838,7 +852,7 @@ export async function loadCommitments(
     .innerJoin(destination, eq(destination.id, flightInstances.destinationAirportId))
     .where(
       and(
-        eq(flightInstances.aircraftId, aircraftId),
+        inArray(flightInstances.aircraftId, [...aircraftIds]),
         ne(flightInstances.id, excludeFlightId),
         ne(flightInstances.status, "cancelled"),
         gte(flightInstances.serviceDate, windowStart),
@@ -846,6 +860,51 @@ export async function loadCommitments(
       ),
     )
     .orderBy(asc(flightInstances.scheduledDeparture));
+
+  for (const { aircraftId, ...commitment } of rows) {
+    if (!aircraftId) continue;
+    const list = byAircraft.get(aircraftId) ?? [];
+    list.push(commitment);
+    byAircraft.set(aircraftId, list);
+  }
+
+  return byAircraft;
+}
+
+/** Planned hangar time that touches the window, keyed by airframe. */
+export async function loadMaintenanceWindowsByAircraft(
+  aircraftIds: readonly string[],
+  from: Instant,
+  to: Instant,
+  executor: Executor = db,
+): Promise<Map<string, MaintenanceWindow[]>> {
+  const byAircraft = new Map<string, MaintenanceWindow[]>();
+  if (aircraftIds.length === 0) return byAircraft;
+
+  const rows = await executor
+    .select({
+      aircraftId: maintenanceEvents.aircraftId,
+      id: maintenanceEvents.id,
+      checkType: maintenanceEvents.checkType,
+      start: maintenanceEvents.scheduledStart,
+      end: maintenanceEvents.scheduledEnd,
+    })
+    .from(maintenanceEvents)
+    .where(
+      and(
+        inArray(maintenanceEvents.aircraftId, [...aircraftIds]),
+        lte(maintenanceEvents.scheduledStart, to),
+        gte(maintenanceEvents.scheduledEnd, from),
+      ),
+    );
+
+  for (const { aircraftId, ...window } of rows) {
+    const list = byAircraft.get(aircraftId) ?? [];
+    list.push(window);
+    byAircraft.set(aircraftId, list);
+  }
+
+  return byAircraft;
 }
 
 /** Most recent flights first, for the "what does this pattern fly" panel. */

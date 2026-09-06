@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Response } from "express";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   assignAircraftSchema,
   changeGateSchema,
@@ -21,6 +21,7 @@ import {
   PHASE_FOR_STATUS,
   addLocalDays,
   addMinutes,
+  decide,
   evaluateAircraftAssignment,
   evaluateChangeGate,
   evaluateDeleteFlight,
@@ -36,6 +37,9 @@ import {
   shiftEstimates,
   resourceRef,
   zonedTimeToInstant,
+  type AssignAircraftContext,
+  type CandidateAircraft,
+  type SectorToFly,
 } from "@airsoko/domain";
 import { db, type Executor } from "../../db/client.ts";
 import {
@@ -45,20 +49,21 @@ import {
   airlines,
   flightInstances,
   flightStatusEvents,
-  maintenanceEvents,
   recurringSchedules,
 } from "../../db/schema/index.ts";
 import {
-  loadCommitments,
+  loadCommitmentsByAircraft,
   loadFlightDetail,
   loadFlightFacts,
   loadFlights,
+  loadMaintenanceWindowsByAircraft,
   loadNextSector,
   loadNumberClashes,
   loadRouteEndpoints,
   loadScheduleOccurrences,
   shiftDate,
 } from "../../flights/state.ts";
+import { loadFleet } from "../../fleet/state.ts";
 import { actorOf, requireAuth, requirePermission } from "../auth.ts";
 import { ApiProblem, notFound, pathParam } from "../errors.ts";
 import { runIntent, type IntentResult } from "../../pipeline/runIntent.ts";
@@ -550,6 +555,62 @@ flightsRouter.post(
 
 // --- Scenario A: the aircraft ----------------------------------------------
 
+/**
+ * Every airframe, checked against this sector.
+ *
+ * The assignment picker shows the operator what the rules would find for each
+ * tail before one is chosen -- not a guess made in the browser, but the same
+ * `evaluateAircraftAssignment` the review runs, over the same rows. A read
+ * rather than a preview because nothing is written and nothing is decided: the
+ * verdicts are a snapshot of the operation as it stands, and choosing a tail
+ * still runs the rule again inside the transaction that would apply the
+ * change. Decision 34.
+ *
+ * Gated on the permission to assign, not merely to read the fleet, because
+ * what comes back is the evaluation of a mutation, and Scenario G holds that
+ * a role refused the change is refused its preview too.
+ */
+flightsRouter.get(
+  "/:id/aircraft/candidates",
+  requireAuth,
+  requirePermission("flight:assign_aircraft"),
+  async (req, res) => {
+    const id = pathParam(req, "id");
+    const now = new Date().toISOString();
+
+    const flight = await loadFlightFacts(id);
+    if (!flight) throw notFound(`Flight ${id}`);
+    const route = await loadRouteEndpoints(flight.routeId);
+    if (!route) throw notFound(`Route ${flight.routeId}`);
+    const sector = sectorToFly(flight, route, await plannedTypeFor(flight.scheduleId));
+
+    const fleet = await loadFleet(now);
+    const ids = fleet.map((item) => item.id);
+    const [candidates, factsFor] = await Promise.all([
+      loadCandidates(ids),
+      loadAssignmentFacts(ids, flight),
+    ]);
+
+    const items = fleet.flatMap((item) => {
+      // Retired between the two reads: no longer a candidate.
+      const candidate = candidates.get(item.id);
+      if (!candidate) return [];
+
+      const evaluation = evaluateAircraftAssignment(candidate, sector, {
+        now,
+        policy: DEFAULT_POLICY,
+        ...factsFor(item.id),
+      });
+      const { preview } = decide("flight.assign_aircraft", evaluation, {
+        acknowledgedWarnings: [],
+      });
+      return [{ ...item, preview }];
+    });
+
+    res.json({ items, total: items.length, generatedAt: now });
+  },
+);
+
 flightsRouter.post(
   "/:id/aircraft",
   requireAuth,
@@ -620,9 +681,7 @@ flightsRouter.post(
     const candidate = await loadCandidate(input.aircraftId);
     if (!candidate) throw notFound(`Aircraft ${input.aircraftId}`);
 
-    const plannedTypeCode = flight.scheduleId
-      ? ((await loadSchedule(flight.scheduleId))?.plannedTypeCode ?? null)
-      : null;
+    const sector = sectorToFly(flight, route, await plannedTypeFor(flight.scheduleId));
 
     const outcome = await runIntent({
       intent: "flight.assign_aircraft",
@@ -630,40 +689,12 @@ flightsRouter.post(
       options,
       now,
       evaluate: async (tx) => {
-        const [commitments, windows] = await Promise.all([
-          loadCommitments(
-            candidate.id,
-            shiftDate(flight.serviceDate, -1),
-            shiftDate(flight.serviceDate, 1),
-            id,
-            tx,
-          ),
-          loadMaintenanceWindows(
-            candidate.id,
-            flight.scheduledDeparture,
-            flight.scheduledArrival,
-            tx,
-          ),
-        ]);
-
-        return evaluateAircraftAssignment(
-          candidate,
-          {
-            flightId: id,
-            flightNumber: flight.flightNumber,
-            originIata: route.origin.iataCode,
-            destinationIata: route.destination.iataCode,
-            origin: route.origin,
-            destination: route.destination,
-            scheduledDeparture: flight.scheduledDeparture,
-            scheduledArrival: flight.scheduledArrival,
-            // Zero until Phase 6. The rule reads it today so Scenario F lands
-            // the moment bookings exist, with nothing here to change.
-            soldByCabin: {},
-            ...(plannedTypeCode ? { plannedTypeCode } : {}),
-          },
-          { now, policy: DEFAULT_POLICY, commitments, maintenanceWindows: windows },
-        );
+        const factsFor = await loadAssignmentFacts([candidate.id], flight, tx);
+        return evaluateAircraftAssignment(candidate, sector, {
+          now,
+          policy: DEFAULT_POLICY,
+          ...factsFor(candidate.id),
+        });
       },
       apply: async (tx) => {
         await tx
@@ -1195,9 +1226,101 @@ export async function loadSchedule(scheduleId: string, executor: Executor = db) 
 
 type ScheduleRow = NonNullable<Awaited<ReturnType<typeof loadSchedule>>>;
 
-/** The candidate airframe, in the shape the Phase 2 assignment rule reads. */
-async function loadCandidate(aircraftId: string, executor: Executor = db) {
-  const [row] = await executor
+// --- The assignment's facts ------------------------------------------------
+//
+// The picker's verdict on a tail and the review of that tail are computed from
+// these same three functions -- one airframe is just a fleet of one -- so the
+// chip an operator read before choosing and the evaluation they confirm
+// against cannot come from different rows.
+
+/** The type the pattern plans the sector on, when the flight came from one. */
+async function plannedTypeFor(scheduleId: string | null): Promise<string | null> {
+  if (!scheduleId) return null;
+  return (await loadSchedule(scheduleId))?.plannedTypeCode ?? null;
+}
+
+/** The sector as the assignment rule reads it. */
+function sectorToFly(
+  flight: {
+    id: string;
+    flightNumber: string;
+    scheduledDeparture: string;
+    scheduledArrival: string;
+  },
+  route: RouteEndpoints,
+  plannedTypeCode: string | null,
+): SectorToFly {
+  return {
+    flightId: flight.id,
+    flightNumber: flight.flightNumber,
+    originIata: route.origin.iataCode,
+    destinationIata: route.destination.iataCode,
+    origin: route.origin,
+    destination: route.destination,
+    scheduledDeparture: flight.scheduledDeparture,
+    scheduledArrival: flight.scheduledArrival,
+    // Zero until Phase 6. The rule reads it today so Scenario F lands the
+    // moment bookings exist, with nothing here to change.
+    soldByCabin: {},
+    ...(plannedTypeCode ? { plannedTypeCode } : {}),
+  };
+}
+
+/**
+ * What the rule needs to know about each airframe beyond the airframe itself:
+ * the sectors it already flies around this one, and the hangar time that
+ * touches it. Two queries however many tails are asked about, handed back as
+ * a lookup.
+ */
+async function loadAssignmentFacts(
+  aircraftIds: readonly string[],
+  flight: {
+    id: string;
+    serviceDate: string;
+    scheduledDeparture: string;
+    scheduledArrival: string;
+  },
+  executor: Executor = db,
+) {
+  const [commitments, maintenanceWindows] = await Promise.all([
+    loadCommitmentsByAircraft(
+      aircraftIds,
+      shiftDate(flight.serviceDate, -1),
+      shiftDate(flight.serviceDate, 1),
+      flight.id,
+      executor,
+    ),
+    loadMaintenanceWindowsByAircraft(
+      aircraftIds,
+      flight.scheduledDeparture,
+      flight.scheduledArrival,
+      executor,
+    ),
+  ]);
+
+  return (
+    aircraftId: string,
+  ): Pick<AssignAircraftContext, "commitments" | "maintenanceWindows"> => ({
+    commitments: commitments.get(aircraftId) ?? [],
+    maintenanceWindows: maintenanceWindows.get(aircraftId) ?? [],
+  });
+}
+
+/**
+ * Active airframes, in the shape the Phase 2 assignment rule reads.
+ *
+ * Its own query rather than a projection of `loadFleet`: the rule wants the
+ * maintenance limits as limits, where the fleet list carries the standing it
+ * derives from them. Capacity is summed from the cabins here as everywhere.
+ */
+async function loadCandidates(
+  aircraftIds: readonly string[],
+  executor: Executor = db,
+): Promise<Map<string, CandidateAircraft>> {
+  const candidates = new Map<string, CandidateAircraft>();
+  if (aircraftIds.length === 0) return candidates;
+
+  const rows = await executor
     .select({
       id: aircraft.id,
       registration: aircraft.registration,
@@ -1211,66 +1334,57 @@ async function loadCandidate(aircraftId: string, executor: Executor = db) {
       nextCheckDueAt: aircraft.nextCheckDueAt,
       nextCheckDueHours: aircraft.nextCheckDueHours,
       nextCheckDueCycles: aircraft.nextCheckDueCycles,
-      active: aircraft.active,
     })
     .from(aircraft)
     .innerJoin(aircraftTypes, eq(aircraftTypes.id, aircraft.aircraftTypeId))
-    .where(and(eq(aircraft.id, aircraftId), eq(aircraft.active, true)))
-    .limit(1);
-
-  if (!row) return null;
+    .where(and(inArray(aircraft.id, [...aircraftIds]), eq(aircraft.active, true)));
 
   const cabins = await executor
-    .select({ cabinClass: aircraftCabins.cabinClass, seatCount: aircraftCabins.seatCount })
+    .select({
+      aircraftId: aircraftCabins.aircraftId,
+      cabinClass: aircraftCabins.cabinClass,
+      seatCount: aircraftCabins.seatCount,
+    })
     .from(aircraftCabins)
-    .where(eq(aircraftCabins.aircraftId, aircraftId));
+    .where(inArray(aircraftCabins.aircraftId, [...aircraftIds]));
 
-  const seatsByCabin: Record<string, number> = {};
-  for (const cabin of cabins) seatsByCabin[cabin.cabinClass] = cabin.seatCount;
+  const seatsByAircraft = new Map<string, Record<string, number>>();
+  for (const cabin of cabins) {
+    const seats = seatsByAircraft.get(cabin.aircraftId) ?? {};
+    seats[cabin.cabinClass] = cabin.seatCount;
+    seatsByAircraft.set(cabin.aircraftId, seats);
+  }
 
-  return {
-    id: row.id,
-    registration: row.registration,
-    serviceability: row.serviceability,
-    typeCode: row.typeCode,
-    rangeNm: row.rangeNm,
-    minimumTurnaroundMinutes: row.minimumTurnaroundMinutes,
-    seatCapacity: Object.values(seatsByCabin).reduce((sum, seats) => sum + seats, 0),
-    seatsByCabin,
-    totalHours: row.totalHours,
-    totalCycles: row.totalCycles,
-    maintenance: {
-      nextCheckType: row.nextCheckType,
-      nextCheckDueAt: row.nextCheckDueAt,
-      nextCheckDueHours: row.nextCheckDueHours,
-      nextCheckDueCycles: row.nextCheckDueCycles,
+  for (const row of rows) {
+    const seatsByCabin = seatsByAircraft.get(row.id) ?? {};
+    candidates.set(row.id, {
+      id: row.id,
+      registration: row.registration,
+      serviceability: row.serviceability,
+      typeCode: row.typeCode,
+      rangeNm: row.rangeNm,
+      minimumTurnaroundMinutes: row.minimumTurnaroundMinutes,
+      seatCapacity: Object.values(seatsByCabin).reduce((sum, seats) => sum + seats, 0),
+      seatsByCabin,
       totalHours: row.totalHours,
       totalCycles: row.totalCycles,
-    },
-  };
+      maintenance: {
+        nextCheckType: row.nextCheckType,
+        nextCheckDueAt: row.nextCheckDueAt,
+        nextCheckDueHours: row.nextCheckDueHours,
+        nextCheckDueCycles: row.nextCheckDueCycles,
+        totalHours: row.totalHours,
+        totalCycles: row.totalCycles,
+      },
+    });
+  }
+
+  return candidates;
 }
 
-async function loadMaintenanceWindows(
-  aircraftId: string,
-  from: string,
-  to: string,
-  executor: Executor = db,
-) {
-  return executor
-    .select({
-      id: maintenanceEvents.id,
-      checkType: maintenanceEvents.checkType,
-      start: maintenanceEvents.scheduledStart,
-      end: maintenanceEvents.scheduledEnd,
-    })
-    .from(maintenanceEvents)
-    .where(
-      and(
-        eq(maintenanceEvents.aircraftId, aircraftId),
-        lte(maintenanceEvents.scheduledStart, to),
-        gte(maintenanceEvents.scheduledEnd, from),
-      ),
-    );
+/** One airframe, for the review of a single assignment. */
+async function loadCandidate(aircraftId: string, executor: Executor = db) {
+  return (await loadCandidates([aircraftId], executor)).get(aircraftId) ?? null;
 }
 
 // --- The series machinery ---------------------------------------------------
