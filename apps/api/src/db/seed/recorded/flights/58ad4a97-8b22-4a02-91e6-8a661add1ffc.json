@@ -19,7 +19,7 @@
     "scheduledArrival": "2026-09-11T08:15:00.000Z",
     "estimatedArrival": null,
     "actualArrival": null,
-    "aircraftId": "dfb0be52-03e7-5cdd-bc54-142bf8218485",
+    "aircraftId": "adf8da5e-b37e-5669-9945-e736325c6281",
     "status": "scheduled",
     "phase": "preflight",
     "flightType": "scheduled_passenger",
@@ -37,7 +37,7 @@
       "aircraftId"
     ],
     "createdAt": "2026-09-03T22:31:46.685Z",
-    "updatedAt": "2026-09-03T22:32:17.797Z"
+    "updatedAt": "2026-09-06T18:24:36.167Z"
   },
   "statusEvents": []
 }
