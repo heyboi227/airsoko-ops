@@ -2,7 +2,74 @@
 
 Where the build currently stands. Updated at the end of every phase.
 
-**Phase 3 — complete.** Next: Phase 4 (Live Operations).
+**Phase 4 — complete.** Next: Phase 5 (Crew).
+
+---
+
+## What Phase 4 delivered
+
+**Gate:** selecting either a map marker or list row selects the same flight,
+opens its detail drawer, and navigates to its existing control record.
+
+**Met.** Scenario E passes at the API and in the browser.
+
+- MapLibre 2D map with bundled land, hub and station labels, great-circle routes,
+  rotating aircraft, animated received positions, pan, zoom and route fitting.
+- One shared selection across the map, list and drawer. Flight and aircraft
+  links open their existing records, and selection survives a page reload.
+- Validated telemetry contracts, a replaceable API provider, and a deterministic
+  schedule simulator. The board's summary loader supplies identity, endpoints,
+  aircraft, times and delay; the simulator never writes a flight status.
+- URL-backed search and status, delay, type, registration, origin, destination,
+  airport, route, domestic/international and UTC-date filters.
+- Authenticated polling with cancellation, request timeout, hidden-tab pause,
+  reconnection, visible frame age and stale/unavailable states.
+- Contextual schedule, phase, position, altitude, speed, heading, progress,
+  remaining distance/time, gates and aircraft capacity in the drawer.
+
+### Verify it
+
+Open `/live`, search for a flight number and select the row. Its route is framed
+and the marker is selected; select a marker to perform the same action in the
+other direction. **Open flight** reaches `/flights/:id`; **Open aircraft** reaches
+the selected airframe in Fleet. Disconnecting the API leaves the last frame
+visible with its age, then reconnects when service returns.
+
+`live.api.spec.ts` and `live.ui.spec.ts` implement Scenario E. Their temporary
+flight fixtures move at any time of day without changing an existing flight.
+`telemetry.test.ts` covers phase boundaries, effective times, consistency between
+speed and position, stale and unavailable cases, short sectors and the dateline.
+
+### Verification results
+
+- `npm run verify` passed: all workspaces type-check, lint and format checks
+  pass, 247 unit tests pass, and both production builds succeed.
+- `npm run test:e2e` passed: 122 acceptance tests, with the nine existing
+  future-phase scenarios still skipped.
+- The live page was visually inspected at 1,600px and 1,100px widths. The map,
+  route, selected marker, list and contextual drawer render together; narrower
+  screens stack the panels without horizontal clipping.
+- Vite retains its advisory about chunks larger than 500 kB. The map is loaded
+  on demand rather than included in the initial route's module.
+
+The main additions are `packages/contracts/src/telemetry.ts`,
+`packages/domain/src/telemetry.ts`, `apps/api/src/telemetry/provider.ts`,
+`apps/web/src/pages/LiveOperationsPage.tsx` and `apps/web/src/components/live/`.
+The existing flight loader, live routes, navigation and Fleet selection were
+extended to connect them.
+
+### Known limitations
+
+- The simulation observes records; controllers still advance operational status.
+  An overdue airborne record has no current position until its times/status are
+  corrected. Selecting a date filters records and does not replay historical movement.
+- Diversions cannot be simulated until a destination is confirmed. External mode
+  explicitly reports unavailable positions; a real tracking adapter is not installed.
+- The map caps a window at 1,000 flights and reports when it does so. Land is
+  deliberately low resolution, with no external tiles or fonts required.
+- Crew assignments and passenger load/inventory remain Phase 5 and Phase 6 work.
+
+Implementation details and the polling decision are recorded in decision 35.
 
 ---
 
@@ -96,33 +163,16 @@ season shortened by an edit survived a reseed; and `z.coerce.boolean()` read the
 
 ---
 
-## Next: Phase 4 — Live Operations
+## Next: Phase 5 — Crew
 
-**Gate:** the map is a working view of the same flight records, not a second copy of
-them — selecting a marker selects its list row and opens the flight this console
-already knows about.
-
-1. The interactive 2D map, on MapLibre GL, using the offline style proven in Phase 1's
-   spike (decision 16).
-2. The synchronised active-flight list, with selection in both directions.
-3. The telemetry provider contract, and the simulation behind it.
-4. Simulated movement through the phases, interpolated along great-circle arcs.
-5. Filters, search, and the flight-detail drawer that links to `/flights/:id`.
-
-Scenario E lands here. The pieces it needs already exist: `GET /api/live-operations`
-returns the active flights with both endpoints' coordinates, `greatCirclePath` is in the
-kernel and tested, and `flightProgress` is the same function the board reads.
+Profiles, qualifications and availability; cockpit and cabin complement;
+assignment with overlap, type-rating and duty warnings. Scenario D is the next
+acceptance gate. The live drawer can then display crew from the same flight record.
 
 ## Open questions
 
-None blocking. The two from Phase 2 still stand and are now due:
-
-- **Map tiles.** The offline style keeps the app working with no network, but a real
-  raster or vector source looks considerably better. If one is acceptable, it needs a
-  provider and a key in `VITE_MAP_TILE_URL`.
-- **Live transport.** SSE is the current plan and is in `.env.example` as
-  `TELEMETRY_PROVIDER`. WebSockets become worth the complexity only if the console ever
-  needs to push commands back, which nothing in the brief requires.
+None blocking. Phase 4 settled transport on authenticated polling and bundled
+offline land. A real tile source and a real telemetry adapter remain optional.
 
 ---
 

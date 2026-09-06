@@ -13,8 +13,8 @@ import { test } from "@playwright/test";
  *
  * Scenario A and Scenario C left this file in Phase 3. They are now executable
  * specifications in `flights.api.spec.ts` and `schedules.api.spec.ts`, and
- * Scenario E's UI half in `flights.ui.spec.ts`. Removing a `fixme` is how a
- * phase gate is claimed, and these are the ones Phase 3 claimed.
+ * their UI halves in `flights.ui.spec.ts`. Scenario E left in Phase 4 and is
+ * exercised by `live.api.spec.ts` and `live.ui.spec.ts`.
  */
 
 test.describe("Scenario B: flight cancellation (Phase 7)", () => {
@@ -43,18 +43,6 @@ test.describe("Scenario D: crew incompatibility (Phase 5)", () => {
 
   test.fixme("nothing invalid is persisted after a refusal", async () => {
     // GET /api/flights/:id/crew must be unchanged after each refusal above.
-  });
-});
-
-test.describe("Scenario E: live flight selection (Phase 4)", () => {
-  test.fixme("searching a flight number selects its marker and its list row", async () => {
-    // UI spec: search "SO412", select the result, assert the map marker has
-    // aria-selected and the list row is highlighted -- both directions.
-  });
-
-  test.fixme("the drawer navigates to the same shared flight record", async () => {
-    // The drawer's "Open flight" link must land on /flights/:id for the same
-    // id the map marker carries. One record, not two representations of it.
   });
 });
 

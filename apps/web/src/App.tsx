@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Box, CircularProgress, CssBaseline, ThemeProvider } from "@mui/material";
 import { buildTheme } from "./theme.ts";
@@ -16,6 +16,11 @@ import { PhasePlaceholder } from "./pages/PhasePlaceholder.tsx";
 import { NAV_ITEMS } from "./shell/navigation.ts";
 
 const THEME_KEY = "airsoko.colourScheme";
+const LiveOperationsPage = lazy(() =>
+  import("./pages/LiveOperationsPage.tsx").then((module) => ({
+    default: module.LiveOperationsPage,
+  })),
+);
 
 function readStoredMode(): "light" | "dark" {
   try {
@@ -62,6 +67,18 @@ export function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/network" element={<AirportsPage />} />
             <Route path="/fleet" element={<FleetPage />} />
+            <Route
+              path="/live"
+              element={
+                <Suspense
+                  fallback={
+                    <CircularProgress aria-label="Loading live operations" sx={{ m: 3 }} />
+                  }
+                >
+                  <LiveOperationsPage />
+                </Suspense>
+              }
+            />
             {/* The static segment is declared first for a human reader;
                 React Router ranks it above the dynamic one either way. */}
             <Route path="/flights/schedules" element={<SchedulesPage />} />

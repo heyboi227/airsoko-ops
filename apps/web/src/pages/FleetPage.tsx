@@ -136,7 +136,18 @@ export function FleetPage() {
   const typeCode = params.get("typeCode") ?? "";
   const state = params.get("state") ?? "";
   const maintenanceDue = params.get("maintenanceDue") === "1";
-  const [selected, setSelected] = useState<string | null>(null);
+  const selected = params.get("selected");
+  function setSelected(id: string | null) {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (id) next.set("selected", id);
+        else next.delete("selected");
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const { can } = useAuth();
 
   function setFilter(key: string, value: string) {

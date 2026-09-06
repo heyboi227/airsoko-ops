@@ -795,3 +795,47 @@ aircraft already doing" to drift from the first.
 so the endpoint requires `flight:assign_aircraft` rather than `aircraft:read`. Scenario G
 holds that a role refused a change is refused its preview; a read that returned the same
 preview for every tail at once would have been a way round that.
+
+---
+
+## 35. Telemetry observes flights; it does not operate them
+
+**Decided.** Phase 4 returns a `LiveSnapshot`: each item contains the shared
+`FlightSummary` and a separate `TelemetryFix`, keyed by the same flight id.
+`loadLiveFlights` reuses the board's joins, seat derivation and summary mapper.
+The provider receives those records and supplies observations. The browser
+validates the contract and only interpolates between received positions.
+
+**Managed polling fits the existing authentication.** Every frame uses the API
+client's bearer header and rechecks permissions. Polls are cancellable, bounded
+by a request timeout, paused in hidden tabs, and refreshed on focus or reconnect.
+Failures retry at five-second intervals; the last frame remains visible with its
+age and a stale banner. `TELEMETRY_TICK_MS` controls the normal cadence. This
+replaces the provisional SSE plan without adding a second authentication path.
+
+**The simulation never writes.** Effective departure and arrival drive a
+great-circle position, heading, speed, altitude profile and physical phase.
+Normal sectors use the timeline's twelve-minute taxi out and eight-minute taxi
+in, scaled for exceptionally short blocks. A controller's stored status stays
+unchanged. On-stand statuses stay at the origin. Overdue or premature departed
+records have a stale position, and unassigned, cancelled or diverted flights
+have no simulated position. A diversion needs a confirmed destination or a real
+observation; no track to its old destination is presented as live telemetry.
+
+**A selected date is a roster window, not historical playback.** The default
+window covers the last hour through the next two hours; an explicit date covers
+that UTC day. The API uses effective-time interval overlap, so overnight sectors
+are included. It returns at most 1,000 records and reports truncation. Filters
+and selection are URL-backed; ended flights are hidden by default. A flight
+whose status changes can leave the map while its updated record remains open.
+
+**Offline geography is bundled.** The map includes Natural Earth's public-domain
+1:110m land layer, documented under `apps/web/public/map/`. Airport labels and
+aircraft are HTML overlays, so no font service is required. An optional raster
+template can be placed above the land. Explicit inline positioning keeps the
+MapLibre container out of normal flow: its unlayered CSS otherwise overrides
+MUI's layered positioning and collapses the map to zero height.
+
+**External mode is explicit about absence.** `TELEMETRY_PROVIDER=external`
+returns unavailable telemetry until an adapter is installed. It never silently
+substitutes simulation. Crew and booking details remain in their delivery phases.
