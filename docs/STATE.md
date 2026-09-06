@@ -169,6 +169,29 @@ trigger so a pair opened in the console is recorded as seed data like everything
 
 ---
 
+## Since Phase 3: the picker checks every tail
+
+Choosing an airframe used to be the first thing the rules said anything about: the picker
+listed the fleet, and an operator learned whether a tail could fly the sector by reviewing
+it, one at a time. Now every tail arrives checked. `GET /api/flights/:id/aircraft/candidates`
+runs `evaluateAircraftAssignment` over the whole active fleet against the sector and returns
+each airframe with the rules' own preview of assigning it. The picker puts the verdict on the
+row — clear, the warnings that would need acknowledging, or the conflicts that refuse it, by
+name — and ranks the fleet by it, with the tails already standing at the origin first.
+
+The verdicts are read, not decided (decision 34). Review still runs the same rule inside the
+transaction that would apply the change, and that evaluation is the one the confirmation
+shows. Both paths draw on the same three loaders, so the chip an operator read before
+choosing cannot disagree with the review that follows for any reason but time. The endpoint
+is gated on `flight:assign_aircraft` rather than on reading the fleet: it returns the
+evaluation of a mutation, and Scenario G refuses a booking administrator the read as it
+refuses them the preview. An acceptance test pins it at the API — the whole fleet comes back
+with a verdict each, the unserviceable tail is refused by name, and a tail's verdict matches
+what its review reaches — Scenario G's boundary test now refuses the read alongside the four
+mutations, and the browser half asserts the conflict is on the row before Review is pressed.
+
+---
+
 ## Phase 2 — complete
 
 **Gate:** an unavailable aircraft is not silently assignable; capacity derives from the

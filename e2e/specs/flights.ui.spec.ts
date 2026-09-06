@@ -154,7 +154,18 @@ test.describe("the flight-control page", () => {
     await signInAs(page, ACCOUNTS.opsController);
     await page.goto(`/flights?date=${futureDate()}&status=scheduled`);
     await settled(page);
-    await page.getByRole("row").nth(1).click();
+
+    // A punctual flight, as the API half of this test picks one. The seed
+    // delays a few sectors deterministically from the reference date, so on
+    // some days the first row two days out already carries a delay -- and the
+    // dialog opens at that figure with its reason, not at zero. Filling the
+    // slider then changes nothing the assertion below could see, because a
+    // seeded 88 on a five-minute step already reads 90 to the browser.
+    await page
+      .getByRole("row")
+      .filter({ hasNotText: /[+-]\d+m/ })
+      .nth(1)
+      .click();
     const heading = page.getByRole("heading", { name: /^SO\d+$/ });
     await expect(heading).toBeVisible();
     const flightNumber = (await heading.innerText()).trim();
@@ -162,6 +173,7 @@ test.describe("the flight-control page", () => {
     try {
       await page.getByRole("button", { name: "Record delay" }).click();
       await page.getByRole("slider", { name: "Departure delay in minutes" }).fill("90");
+      await expect(page.getByText("Minutes later off blocks: 90")).toBeVisible();
       await page.getByRole("button", { name: "Review" }).click();
 
       const apply = page.getByRole("button", { name: "Record" });
@@ -220,11 +232,23 @@ test.describe("Scenario A: aircraft reassignment", () => {
     await expect(page.getByRole("heading", { name: /^SO\d+$/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Change aircraft" }).click();
-    await expect(page.getByText(/Choosing a tail runs the checks/)).toBeVisible();
+    await expect(page.getByText(/checked against this sector/)).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Checks" })).toBeVisible();
 
-    // Unserviceable airframes are listed rather than hidden -- and refused when
-    // chosen, which is the Phase 2 gate reached from the Phase 3 screen.
-    const maintenance = page.getByRole("row").filter({ hasText: "Maintenance" }).first();
+    // Unserviceable airframes are listed rather than hidden, and the picker
+    // says so before anything is chosen: the row carries the rules' verdict
+    // and names the finding behind it. The serviceability chip reads exactly
+    // "Maintenance"; a tail whose check is merely due carries "Maintenance
+    // due soon" in its checks column, and that is not the row wanted here.
+    const maintenance = page
+      .getByRole("row")
+      .filter({ has: page.getByText("Maintenance", { exact: true }) })
+      .first();
+    await expect(maintenance.getByText(/^\d+ conflicts?$/)).toBeVisible();
+    await expect(maintenance.getByText(/^YU-\w+ is maintenance$/)).toBeVisible();
+
+    // And refused when chosen, which is the Phase 2 gate reached from the
+    // Phase 3 screen.
     await maintenance.getByRole("button", { name: "Review" }).click();
 
     await expect(

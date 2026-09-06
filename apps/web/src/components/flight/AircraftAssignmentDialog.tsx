@@ -21,27 +21,37 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import BlockIcon from "@mui/icons-material/Block";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import {
   OPERATIONAL_STATE_LABELS,
   SERVICEABILITY_LABELS,
   type AircraftOperationalState,
   type AircraftServiceability,
   type FlightDetail,
+  type MutationPreview,
+  type RuleFinding,
 } from "@airsoko/contracts";
-import { apiRequest } from "../../api/client.ts";
+import { ApiRequestError, apiRequest } from "../../api/client.ts";
 import { useMutationFlow } from "../../api/useMutationFlow.ts";
 import { MutationConfirmDialog } from "../MutationConfirmDialog.tsx";
 
 /**
  * Scenario A, as an operator performs it.
  *
- * Picking the airframe and evaluating the change are deliberately two steps.
- * The rules that decide whether a tail may fly a sector -- availability,
- * overlap, turnaround, repositioning, range, capacity -- run on the server
- * against the airframe chosen, and this dialog never guesses at them. What it
- * does do is put enough in front of the operator to choose well: where each
- * tail is now, what it is doing, and how many seats it has against the type
- * the schedule planned.
+ * Every tail arrives already checked against this sector. The rules that
+ * decide whether an airframe may fly it -- availability, overlap, turnaround,
+ * repositioning, range, capacity -- run on the server against each one, and
+ * the verdict sits in the row: clear, the warnings that would need
+ * acknowledging, or the conflicts that refuse it, by name. The operator
+ * chooses from a fleet that has already answered the question instead of
+ * asking it one tail at a time, and this dialog still never guesses at a rule.
+ *
+ * Choosing is its own step all the same. The verdicts are a snapshot of the
+ * operation when the picker opened; Review runs the same rule again inside
+ * the transaction that would apply the change, and that evaluation is the one
+ * the confirmation shows and the write agrees with.
  *
  * Unserviceable airframes are shown rather than hidden. Hiding them would make
  * the fleet look smaller than it is and leave an operator wondering where a
@@ -49,7 +59,7 @@ import { MutationConfirmDialog } from "../MutationConfirmDialog.tsx";
  * moment it is asked. The rules refuse them either way.
  */
 
-interface FleetRow {
+interface CandidateRow {
   id: string;
   registration: string;
   name: string | null;
@@ -63,6 +73,93 @@ interface FleetRow {
     nextFlight: { flightNumber: string; originIata: string; destinationIata: string } | null;
   };
   maintenance: { urgency: string; summary: string };
+  /** The rules' own verdict on this tail flying this sector, as of `generatedAt`. */
+  preview: MutationPreview;
+}
+
+interface CandidatesResponse {
+  items: CandidateRow[];
+  total: number;
+  generatedAt: string;
+}
+
+type Verdict = "clear" | "warnings" | "blocked";
+
+interface Assessment {
+  verdict: Verdict;
+  blocking: RuleFinding[];
+  warnings: RuleFinding[];
+}
+
+interface AssessedRow {
+  item: CandidateRow;
+  assessment: Assessment;
+}
+
+/** The preview, read the way the confirmation reads it. */
+function assess(preview: MutationPreview): Assessment {
+  const blocking = preview.findings.filter((finding) => finding.severity === "blocking");
+  const warnings = preview.findings.filter((finding) => finding.severity === "warning");
+  const verdict: Verdict =
+    blocking.length > 0 ? "blocked" : warnings.length > 0 ? "warnings" : "clear";
+  return { verdict, blocking, warnings };
+}
+
+/** Findings named on the row before the rest are folded into a count. */
+const NAMED_FINDINGS = 3;
+
+function VerdictCell({ assessment }: { assessment: Assessment }) {
+  const { verdict, blocking, warnings } = assessment;
+  // Conflicts first: they are why the tail is off the table, and the warnings
+  // would only matter once they were gone.
+  const named = [...blocking, ...warnings];
+
+  return (
+    <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
+      {verdict === "blocked" ? (
+        <Chip
+          size="small"
+          color="error"
+          icon={<BlockIcon />}
+          label={`${blocking.length} ${blocking.length === 1 ? "conflict" : "conflicts"}`}
+        />
+      ) : verdict === "warnings" ? (
+        <Chip
+          size="small"
+          color="warning"
+          icon={<WarningAmberIcon />}
+          label={`${warnings.length} ${warnings.length === 1 ? "warning" : "warnings"}`}
+        />
+      ) : (
+        <Chip
+          size="small"
+          color="success"
+          variant="outlined"
+          icon={<CheckCircleIcon />}
+          label="Clear"
+        />
+      )}
+      {named.slice(0, NAMED_FINDINGS).map((finding, index) => (
+        <Tooltip key={`${finding.code}-${index}`} title={finding.detail} placement="top-start">
+          <Typography
+            variant="caption"
+            sx={{
+              color: finding.severity === "blocking" ? "error.main" : "warning.main",
+              cursor: "help",
+              lineHeight: 1.3,
+            }}
+          >
+            {finding.title}
+          </Typography>
+        </Tooltip>
+      ))}
+      {named.length > NAMED_FINDINGS ? (
+        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+          and {named.length - NAMED_FINDINGS} more
+        </Typography>
+      ) : null}
+    </Stack>
+  );
 }
 
 export function AircraftAssignmentDialog({
@@ -75,11 +172,15 @@ export function AircraftAssignmentDialog({
   onChanged: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const [chosen, setChosen] = useState<FleetRow | null>(null);
+  const [chosen, setChosen] = useState<CandidateRow | null>(null);
 
-  const fleet = useQuery({
-    queryKey: ["fleet", "assignment"],
-    queryFn: () => apiRequest<{ items: FleetRow[] }>("/api/aircraft"),
+  const candidates = useQuery({
+    queryKey: ["flight", flight.id, "aircraft-candidates"],
+    queryFn: () =>
+      apiRequest<CandidatesResponse>(`/api/flights/${flight.id}/aircraft/candidates`),
+    // The verdicts are a snapshot of the operation. A picker opened again
+    // takes a fresh one rather than showing the last.
+    staleTime: 0,
   });
 
   const flow = useMutationFlow<{ aircraftId: string | null }, unknown>({
@@ -91,37 +192,56 @@ export function AircraftAssignmentDialog({
     },
   });
 
-  const candidates = useMemo(() => {
+  const assessed = useMemo<AssessedRow[]>(
+    () =>
+      (candidates.data?.items ?? []).map((item) => ({
+        item,
+        assessment: assess(item.preview),
+      })),
+    [candidates.data],
+  );
+
+  const tally = useMemo(() => {
+    const counts: Record<Verdict, number> = { clear: 0, warnings: 0, blocked: 0 };
+    for (const { assessment } of assessed) counts[assessment.verdict] += 1;
+    return counts;
+  }, [assessed]);
+
+  const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const rows = (fleet.data?.items ?? []).filter(
-      (item) =>
+    const matching = assessed.filter(
+      ({ item }) =>
         !needle ||
         item.registration.toLowerCase().includes(needle) ||
         item.type.icaoTypeCode.toLowerCase().includes(needle) ||
         (item.state.locationIata ?? "").toLowerCase().includes(needle),
     );
 
-    // The tails standing at this flight's origin come first: nothing in this
-    // system teleports an aeroplane, so those are the ones that can fly it
-    // without a positioning sector.
-    return rows.sort((a, b) => {
-      const atOrigin = (row: FleetRow) =>
-        row.state.locationIata === flight.origin.iataCode ? 0 : 1;
-      const usable = (row: FleetRow) => (row.serviceability === "in_service" ? 0 : 1);
-      const planned = (row: FleetRow) =>
-        flight.plannedTypeCode && row.type.icaoTypeCode === flight.plannedTypeCode ? 0 : 1;
+    // The tails the rules refuse go to the bottom. Among the rest, the ones
+    // standing at this flight's origin come first -- nothing in this system
+    // teleports an aeroplane, so those fly it without a positioning sector --
+    // then the ones with nothing to acknowledge, then the type the schedule
+    // planned on.
+    return matching.sort((a, b) => {
+      const refused = (row: AssessedRow) => (row.assessment.verdict === "blocked" ? 1 : 0);
+      const atOrigin = (row: AssessedRow) =>
+        row.item.state.locationIata === flight.origin.iataCode ? 0 : 1;
+      const toAcknowledge = (row: AssessedRow) => row.assessment.warnings.length;
+      const planned = (row: AssessedRow) =>
+        flight.plannedTypeCode && row.item.type.icaoTypeCode === flight.plannedTypeCode ? 0 : 1;
       return (
-        usable(a) - usable(b) ||
+        refused(a) - refused(b) ||
         atOrigin(a) - atOrigin(b) ||
+        toAcknowledge(a) - toAcknowledge(b) ||
         planned(a) - planned(b) ||
-        a.registration.localeCompare(b.registration)
+        a.item.registration.localeCompare(b.item.registration)
       );
     });
-  }, [fleet.data, search, flight.origin.iataCode, flight.plannedTypeCode]);
+  }, [assessed, search, flight.origin.iataCode, flight.plannedTypeCode]);
 
   return (
     <>
-      <Dialog open={flow.payload === null} onClose={onClose} maxWidth="md" fullWidth>
+      <Dialog open={flow.payload === null} onClose={onClose} maxWidth="lg" fullWidth>
         <DialogTitle>
           Assign an aircraft to {flight.flightNumber}
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -140,12 +260,27 @@ export function AircraftAssignmentDialog({
               size="small"
               sx={{ minWidth: 240 }}
             />
+            {candidates.data ? (
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                {tally.clear} clear · {tally.warnings} with warnings · {tally.blocked} in
+                conflict
+              </Typography>
+            ) : null}
+            <Box sx={{ flex: 1 }} />
             {flight.aircraft ? (
               <Button color="warning" onClick={() => flow.review({ aircraftId: null })}>
                 Release {flight.aircraft.registration}
               </Button>
             ) : null}
           </Stack>
+
+          {candidates.isError ? (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {candidates.error instanceof ApiRequestError
+                ? candidates.error.message
+                : "The fleet could not be checked against this sector."}
+            </Alert>
+          ) : null}
 
           <TableContainer sx={{ maxHeight: 420 }}>
             <Table size="small" stickyHeader>
@@ -158,14 +293,15 @@ export function AircraftAssignmentDialog({
                   <TableCell>Next sector</TableCell>
                   <TableCell align="right">Seats</TableCell>
                   <TableCell align="right">Range</TableCell>
+                  <TableCell>Checks</TableCell>
                   <TableCell />
                 </TableRow>
               </TableHead>
               <TableBody>
-                {fleet.isLoading
+                {candidates.isLoading
                   ? Array.from({ length: 6 }, (_, index) => (
                       <TableRow key={index}>
-                        {Array.from({ length: 8 }, (__, cell) => (
+                        {Array.from({ length: 9 }, (__, cell) => (
                           <TableCell key={cell}>
                             <Skeleton variant="text" />
                           </TableCell>
@@ -174,11 +310,12 @@ export function AircraftAssignmentDialog({
                     ))
                   : null}
 
-                {candidates.map((item) => {
+                {rows.map(({ item, assessment }) => {
                   const current = item.id === flight.aircraft?.id;
                   const usable = item.serviceability === "in_service";
+                  const refused = assessment.verdict === "blocked";
                   return (
-                    <TableRow key={item.id} hover sx={{ opacity: usable ? 1 : 0.55 }}>
+                    <TableRow key={item.id} hover sx={{ opacity: refused ? 0.6 : 1 }}>
                       <TableCell>
                         <Typography variant="overline">{item.registration}</Typography>
                         {current ? (
@@ -245,6 +382,9 @@ export function AircraftAssignmentDialog({
                       <TableCell align="right">
                         <Typography variant="caption">{item.type.rangeNm} nm</Typography>
                       </TableCell>
+                      <TableCell>
+                        <VerdictCell assessment={assessment} />
+                      </TableCell>
                       <TableCell align="right">
                         <Button
                           size="small"
@@ -265,9 +405,10 @@ export function AircraftAssignmentDialog({
           </TableContainer>
 
           <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
-            Choosing a tail runs the checks against it — availability, overlapping sectors,
-            turnaround, repositioning, range and capacity. Nothing is written until the result
-            is confirmed.
+            Every airframe has been checked against this sector as the operation stands —
+            availability, overlapping sectors, turnaround, repositioning, range and capacity.
+            Review runs the same checks again at the moment of assignment, and nothing is
+            written until the result is confirmed.
           </Alert>
         </DialogContent>
         <DialogActions>

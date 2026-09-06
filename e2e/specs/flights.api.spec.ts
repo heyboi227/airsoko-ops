@@ -230,6 +230,63 @@ test.describe("Scenario A: aircraft reassignment", () => {
     expect(unavailable?.detail).toContain(target.flightNumber);
   });
 
+  test("checks every airframe against the sector before one is chosen", async ({ request }) => {
+    const token = await signIn(request, ACCOUNTS.opsController);
+    const date = await futureDate(request, token);
+
+    const target = (await flights(request, token, { from: date, to: date })).items.find(
+      (item) => item.status === "scheduled" && item.aircraft,
+    );
+    if (!target) throw new Error("No scheduled flight with an aircraft on the chosen date.");
+
+    const response = await request.get(`/api/flights/${target.id}/aircraft/candidates`, {
+      headers: auth(token),
+    });
+    expect(response.status()).toBe(200);
+    const { items } = (await response.json()) as {
+      items: { id: string; registration: string; serviceability: string; preview: Preview }[];
+    };
+
+    // The whole active fleet comes back, each tail with the rules' own verdict.
+    const fleet = await request.get("/api/aircraft", { headers: auth(token) });
+    const airframes = (await fleet.json()) as { items: { id: string }[] };
+    expect(items.map((item) => item.id).sort()).toEqual(
+      airframes.items.map((item) => item.id).sort(),
+    );
+    for (const item of items) expect(item.preview.intent).toBe("flight.assign_aircraft");
+
+    // An unserviceable tail is refused by name in the picker, before it is chosen.
+    const unserviceable = items.find((item) => item.serviceability !== "in_service");
+    if (!unserviceable) throw new Error("The seed left every airframe in service.");
+    expect(unserviceable.preview.applicable).toBe(false);
+    const unavailable = unserviceable.preview.findings.find(
+      (finding) => finding.code === "AIRCRAFT_UNAVAILABLE",
+    );
+    expect(unavailable?.detail).toContain(unserviceable.registration);
+
+    // The verdict the picker shows is the one the review reaches: same rule,
+    // same rows. Checked on a refused tail and on one the rules would accept.
+    const accepted = items.find(
+      (item) => item.preview.applicable && item.id !== target.aircraft?.id,
+    );
+    for (const item of [unserviceable, ...(accepted ? [accepted] : [])]) {
+      const review = await request.post(`/api/flights/${target.id}/aircraft`, {
+        headers: auth(token),
+        data: { aircraftId: item.id, mutation: { preview: true } },
+      });
+      expect(review.status(), item.registration).toBe(200);
+      const preview = (await review.json()) as Preview;
+
+      expect(preview.applicable).toBe(item.preview.applicable);
+      expect(preview.findings.map((finding) => finding.code).sort()).toEqual(
+        item.preview.findings.map((finding) => finding.code).sort(),
+      );
+      expect([...preview.requiresAcknowledgement].sort()).toEqual(
+        [...item.preview.requiresAcknowledgement].sort(),
+      );
+    }
+  });
+
   test("refuses an airframe already flying, and names the conflicting flight", async ({
     request,
   }) => {
@@ -550,6 +607,13 @@ test.describe("Scenario G: the permission boundary holds at the API", () => {
       // The message names the permission, so a refusal is diagnosable.
       expect(body.error.message).toMatch(/permission/);
     }
+
+    // Nor is the picker's read of the same evaluation: what the rules would
+    // make of this role assigning each airframe is not this role's to ask.
+    const candidates = await request.get(`/api/flights/${target.id}/aircraft/candidates`, {
+      headers: auth(bookings),
+    });
+    expect(candidates.status(), "GET /api/flights/:id/aircraft/candidates").toBe(403);
 
     // Preview mode is not a way past the boundary either: the check runs before
     // anything is evaluated.

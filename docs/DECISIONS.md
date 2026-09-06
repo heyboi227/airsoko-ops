@@ -762,3 +762,36 @@ them. Two of those rules exist for exactly this: `ROUTE_PAIR_IN_USE` refuses a d
 name, and `ROUTE_BLOCK_IMPLAUSIBLE` refuses a block time no aeroplane could keep. The reach
 check warns rather than refuses, because filing a pair the current fleet cannot fly is how a
 network plan starts.
+
+---
+
+## 34. A read may run a rule; only the pipeline may act on one
+
+**Decided.** `GET /api/flights/:id/aircraft/candidates` evaluates every active airframe
+against a sector with `evaluateAircraftAssignment` and returns each one's findings, outside
+`runIntent`. It is the first endpoint to run a kernel rule without the mutation pipeline,
+and the line it draws is worth writing down.
+
+The pipeline's guarantee is about writes: nothing lands unless the rules were evaluated
+against the state inside the same transaction, and the audit, the alerts and the change
+commit together or not at all. Evaluation itself is pure — decision 7 — and asking what the
+rules would find is a read like any other. Routing it through the pipeline would have meant
+twenty-five preview transactions to open one picker, each arming the seed recorder for
+nothing.
+
+**What the read is not.** It decides nothing. The verdicts are a snapshot of the operation
+when the picker opened; choosing a tail runs the same rule again inside the transaction that
+would apply the change, and that evaluation is the one the confirmation shows and the write
+agrees with. A picker that let a "clear" chip stand in for the review would be exactly the
+client-side guess the dialog was written not to make.
+
+**Same rule, same rows.** The facts both paths read — the airframe in the shape the rule
+takes, its commitments either side of the sector, the hangar time that touches it — come from
+three loaders that take a list of airframes, and the review passes a list of one. Two queries
+whether one tail is asked about or the fleet, and no second implementation of "what is this
+aircraft already doing" to drift from the first.
+
+**Gated on the mutation's permission.** What comes back is the evaluation of an assignment,
+so the endpoint requires `flight:assign_aircraft` rather than `aircraft:read`. Scenario G
+holds that a role refused a change is refused its preview; a read that returned the same
+preview for every tail at once would have been a way round that.
