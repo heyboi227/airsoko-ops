@@ -32,9 +32,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: "/live",
     label: "Live Operations",
     permission: "flight:read",
-    arrivesInPhase: 4,
-    summary:
-      "The interactive map, the synchronised active-flight list, and the telemetry provider that drives them. The defining feature of the product.",
+    arrivesInPhase: null,
+    summary: "",
   },
   {
     path: "/flights",

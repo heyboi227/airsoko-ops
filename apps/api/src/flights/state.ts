@@ -118,6 +118,7 @@ const flightColumns = {
   originLatitude: origin.latitude,
   originLongitude: origin.longitude,
   originIsHub: origin.isHub,
+  originCountryCode: origin.countryCode,
 
   destinationId: destination.id,
   destinationIata: destination.iataCode,
@@ -127,6 +128,7 @@ const flightColumns = {
   destinationLatitude: destination.latitude,
   destinationLongitude: destination.longitude,
   destinationIsHub: destination.isHub,
+  destinationCountryCode: destination.countryCode,
 
   routeId: flightInstances.routeId,
   distanceNm: routes.distanceNm,
@@ -141,6 +143,7 @@ const flightColumns = {
   bodyType: aircraftTypes.bodyType,
   rangeNm: aircraftTypes.rangeNm,
   minimumTurnaroundMinutes: aircraftTypes.minimumTurnaroundMinutes,
+  serviceCeilingFt: aircraftTypes.serviceCeilingFt,
 
   plannedTypeCode: plannedType.icaoTypeCode,
 } as const;
@@ -406,6 +409,46 @@ export async function loadFlights(
     total: items.length,
     truncated: rows.length === query.limit,
     generatedAt: now,
+  };
+}
+
+/** Live roster uses interval overlap, including overnight and delayed sectors.
+ * It shares both the query joins and the summary mapper with the flight board.
+ * A bounded response says when it is clipped; no silent partial map.
+ */
+export async function loadLiveFlights(
+  from: Instant,
+  to: Instant,
+  now: Instant,
+  executor: Executor = db,
+) {
+  const rows = await baseQuery(executor)
+    .where(
+      and(
+        lte(
+          sql`coalesce(${flightInstances.actualDeparture}, ${flightInstances.estimatedDeparture}, ${flightInstances.scheduledDeparture})`,
+          to,
+        ),
+        gte(
+          sql`coalesce(${flightInstances.actualArrival}, ${flightInstances.estimatedArrival}, ${flightInstances.scheduledArrival})`,
+          from,
+        ),
+      ),
+    )
+    .orderBy(asc(flightInstances.scheduledDeparture), asc(flightInstances.id))
+    .limit(1001);
+  const selected = rows.slice(0, 1000);
+  const seats = await seatsByAircraft(
+    selected.flatMap((row) => (row.aircraftId ? [row.aircraftId] : [])),
+    executor,
+  );
+  return {
+    items: selected.map((row) => ({
+      flight: toSummary(row, now, seats),
+      domestic: row.originCountryCode === row.destinationCountryCode,
+      serviceCeilingFt: row.serviceCeilingFt ?? 35_000,
+    })),
+    truncated: rows.length > 1000,
   };
 }
 

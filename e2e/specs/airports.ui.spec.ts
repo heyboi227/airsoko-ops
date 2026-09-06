@@ -85,8 +85,8 @@ test.describe("Airports", () => {
 
   test("unbuilt sections say so rather than showing an empty page", async ({ page }) => {
     await signInAs(page, ACCOUNTS.opsController);
-    await page.getByRole("link", { name: "Live Operations" }).click();
+    await page.getByRole("link", { name: "Crew P5" }).click();
     await expect(page.getByText("Not built yet")).toBeVisible();
-    await expect(page.getByText(/interactive map/i)).toBeVisible();
+    await expect(page.getByText(/type ratings and availability/i)).toBeVisible();
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { ACCOUNTS, applyAcknowledging, auth, signIn } from "../support/api.ts";
+import { liveSnapshotSchema } from "@airsoko/contracts";
 
 /**
  * Flights: the list, the control actions, and the rules that guard them.
@@ -420,20 +421,24 @@ test.describe("Scenario A: aircraft reassignment", () => {
   test("an accepted change reaches the live map", async ({ request }) => {
     const token = await signIn(request, ACCOUNTS.opsController);
 
-    // An active flight is on the map by definition; the assertion is that the
-    // map reads the same aircraft record the flight does, not a copy of it.
-    const live = await request.get("/api/live-operations", { headers: auth(token) });
+    // Read a full UTC day so this invariant also runs after the last departure.
+    // Physical telemetry and operational status are separate in Phase 4.
+    const date = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.parse(`${date}T00:00:00.000Z`) + 86_400_000).toISOString();
+    const live = await request.get("/api/live-operations", {
+      headers: auth(token),
+      params: { from: `${date}T00:00:00.000Z`, to: tomorrow },
+    });
     expect(live.status()).toBe(200);
-    const body = (await live.json()) as {
-      items: { id: string; flightNumber: string; registration: string | null }[];
-    };
+    const body = liveSnapshotSchema.parse(await live.json());
+    const tracked = body.items.find((item) => item.flight.aircraft);
+    if (!tracked) throw new Error("No assigned flight in the seeded window.");
 
-    const tracked = body.items.find((item) => item.registration);
-    if (!tracked) throw new Error("Nothing is airborne in the seeded window.");
-
-    const detail = await request.get(`/api/flights/${tracked.id}`, { headers: auth(token) });
+    const detail = await request.get(`/api/flights/${tracked.flight.id}`, {
+      headers: auth(token),
+    });
     const flight = ((await detail.json()) as { flight: FlightRow }).flight;
-    expect(flight.aircraft?.registration).toBe(tracked.registration);
+    expect(flight.aircraft?.registration).toBe(tracked.flight.aircraft?.registration);
   });
 });
 
