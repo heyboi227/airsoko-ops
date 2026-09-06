@@ -117,6 +117,30 @@ route distances and map rendering, useless for navigation.
 
 ---
 
+## Live Operations
+
+Open **Live Operations** in the sidebar, or `/live`. The default view covers
+flights overlapping the last hour through the next two hours. Choose a UTC date
+for another roster window, search for a flight, and select either its list row
+or map marker. **Open flight** reaches the existing control page; **Open aircraft**
+opens that airframe in Fleet.
+
+Positions are simulated from effective flight times. Operational statuses are
+never advanced by the simulator. A stale status/time combination, unassigned
+aircraft or diversion is labelled rather than given an invented position. The
+date filter does not replay a historical flight.
+
+`TELEMETRY_TICK_MS` sets the refresh interval (2,000 ms by default). Polls pause
+when the tab is hidden and reconnect automatically. The map works without an
+external tile or font service, using bundled Natural Earth land data.
+`VITE_MAP_TILE_URL` optionally adds a raster source. `TELEMETRY_PROVIDER=external`
+shows unavailable positions until an external provider is implemented.
+
+Scenario E is covered by `e2e/specs/live.api.spec.ts` and `live.ui.spec.ts`.
+Run `npm run test:e2e` with the API, web app and seeded database available.
+
+---
+
 ## Working on two machines
 
 Every entry made through the application is recorded as seed data — one JSON file per

@@ -1,0 +1,85 @@
+.live-marker {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #558095;
+  border-radius: 50%;
+  background: #0c2635;
+  color: #b7e5ff;
+  cursor: pointer;
+  box-shadow: 0 2px 5px #0008;
+  padding: 6px;
+}
+.live-marker svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.live-marker[data-status="scheduled"],
+.live-marker[data-status="check_in_open"],
+.live-marker[data-status="boarding"],
+.live-marker[data-status="gate_closed"] {
+  border-style: dashed;
+  color: #c4cdd5;
+}
+.live-marker[data-status="taxi_out"],
+.live-marker[data-status="taxi_in"] {
+  border-radius: 7px;
+}
+.live-marker[data-status="arrived"] {
+  color: #99e1b6;
+  border-color: #99e1b6;
+}
+.live-marker[data-delayed="true"] {
+  color: #ffc77c;
+  border-color: #ffc77c;
+}
+.live-marker[aria-pressed="true"] {
+  outline: 3px solid #fff;
+  background: #0f5f8f;
+  z-index: 3;
+}
+.live-marker:focus-visible {
+  outline: 3px solid #ffe082;
+}
+.live-marker-label {
+  position: absolute;
+  top: 37px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #f2f7fa;
+  background: #0c1b29ed;
+  font:
+    11px "Segoe UI",
+    sans-serif;
+  white-space: nowrap;
+  padding: 2px 5px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.live-station {
+  color: #becbd7;
+  font:
+    10px "Segoe UI",
+    sans-serif;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
+.live-station::before {
+  content: "";
+  display: inline-block;
+  height: 5px;
+  width: 5px;
+  background: #8faab9;
+  border: 1px solid #071b28;
+  border-radius: 50%;
+  margin-right: 3px;
+}
+.live-station[data-hub="true"] {
+  color: #fff;
+  font-weight: 700;
+}
+.live-station[data-hub="true"]::before {
+  height: 8px;
+  width: 8px;
+  background: #e9f0f4;
+}
