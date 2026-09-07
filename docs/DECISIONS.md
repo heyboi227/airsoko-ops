@@ -836,6 +836,20 @@ template can be placed above the land. Explicit inline positioning keeps the
 MapLibre container out of normal flow: its unlayered CSS otherwise overrides
 MUI's layered positioning and collapses the map to zero height.
 
+**What is drawn in GL and what is HTML follows one rule.** Anything that has to sit
+on a coordinate — a route arc, a station dot — is a GL layer, projected by the same
+renderer at every zoom. Anything that only has to sit _beside_ a coordinate — an
+airport code, an aircraft marker's caption — is HTML, because text needs glyphs the
+offline style does not have (decision 16). The first cut broke the rule: the station
+dot was a pseudo-element on the HTML label, so it inherited the label's offset and sat a
+fixed ten screen pixels south-east of the coordinate its arcs ended at. Zoomed in that
+is a hair; at zoom 1 it is a few hundred kilometres, and every route visibly missed its
+airport. The dot is now a `circle` layer above the routes, and the label is anchored
+clear of it. HTML markers also keep their pixel size while the map scales, so the
+aircraft marker shrinks from 34px to 22px as the view widens, and below zoom 2.5 the
+labels step back to the selected flight and its two airports — hubs included, because
+the two bases are 130 km apart, which at zoom 1 is one label's width.
+
 **External mode is explicit about absence.** `TELEMETRY_PROVIDER=external`
 returns unavailable telemetry until an adapter is installed. It never silently
 substitutes simulation. Crew and booking details remain in their delivery phases.

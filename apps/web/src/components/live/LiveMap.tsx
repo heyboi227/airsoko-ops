@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import { Map as LibreMap, Marker, NavigationControl, type GeoJSONSource } from "maplibre-gl";
-import type { FeatureCollection, MultiLineString } from "geojson";
+import type { FeatureCollection, MultiLineString, Point } from "geojson";
 import { greatCirclePath } from "@airsoko/domain";
 import type { LiveFlight } from "@airsoko/contracts";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -19,6 +19,37 @@ const EMPTY_ROUTES: FeatureCollection<MultiLineString> = {
   type: "FeatureCollection",
   features: [],
 };
+
+const EMPTY_STATIONS: FeatureCollection<Point> = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+/**
+ * Below this zoom the network is a cluster of overlapping markers, so labels
+ * step back: the selected flight and its two airports keep theirs, everything
+ * else is identified by its dot or icon and its tooltip. Hubs included -- the
+ * two bases are 130 km apart, which at zoom 1 is one label's width.
+ */
+const LABELS_STEP_BACK_BELOW_ZOOM = 2.5;
+
+/**
+ * Hand the current zoom to the stylesheet. Markers are HTML, so they cannot
+ * scale with the map the way a GL layer does; the CSS reads `--live-zoom` to
+ * shrink them as the view widens, and `data-zoom-band` to declutter labels.
+ */
+function applyZoom(map: LibreMap, element: HTMLElement) {
+  const zoom = map.getZoom();
+  element.style.setProperty("--live-zoom", zoom.toFixed(2));
+  element.dataset.zoomBand = zoom < LABELS_STEP_BACK_BELOW_ZOOM ? "far" : "near";
+}
+
+/** Flag the station labels the stylesheet must keep when the others step back. */
+function markSelectedEndpoints(labels: Map<string, HTMLElement>, endpoints: Set<string>) {
+  labels.forEach((label, iata) => {
+    label.setAttribute("data-selected-endpoint", String(endpoints.has(iata)));
+  });
+}
 
 function aircraftButton(): HTMLButtonElement {
   const button = document.createElement("button");
@@ -80,6 +111,11 @@ export function LiveMap({
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LibreMap | null>(null);
   const markers = useRef(new Map<string, Marker>());
+  const stationLabels = useRef(new Map<string, HTMLElement>());
+  // The two airports the selected flight flies between. Kept in a ref because
+  // both the station effect and the selection effect need it, and neither
+  // should re-run for the other's reasons.
+  const selectedEndpoints = useRef(new Set<string>());
   const lastSelection = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +167,9 @@ export function LiveMap({
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+    const element = container.current;
+    applyZoom(map, element);
+    map.on("zoom", () => applyZoom(map, element));
     map.on("error", () =>
       setError(
         "A map layer could not load. Flight records remain available; the offline map is used when possible.",
@@ -153,6 +192,24 @@ export function LiveMap({
           "line-opacity": ["case", ["get", "selected"], 1, 0.5],
         },
       });
+      // Station dots are drawn by the GL renderer, in the same layer stack and
+      // the same projection as the arcs, so a dot sits on the coordinate an arc
+      // ends at whatever the zoom. An HTML marker cannot make that promise: any
+      // offset given to it is a fixed number of screen pixels, which at zoom 1
+      // is a few hundred kilometres. Added after the routes so a dot caps the
+      // line rather than the line crossing the dot.
+      map.addSource("stations", { type: "geojson", data: EMPTY_STATIONS });
+      map.addLayer({
+        id: "stations",
+        type: "circle",
+        source: "stations",
+        paint: {
+          "circle-radius": ["case", ["get", "hub"], 4.5, 3],
+          "circle-color": ["case", ["get", "hub"], "#e9f0f4", "#8faab9"],
+          "circle-stroke-color": "#071b28",
+          "circle-stroke-width": 1,
+        },
+      });
       setReady(true);
     });
     const resize = new ResizeObserver(() => map.resize());
@@ -170,18 +227,36 @@ export function LiveMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
+    (map.getSource("stations") as GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: stations.map((station) => ({
+        type: "Feature",
+        properties: { iata: station.iataCode, hub: station.isHub },
+        geometry: { type: "Point", coordinates: [station.longitude, station.latitude] },
+      })),
+    });
+    // The label is the only HTML part of a station, and it carries no dot of
+    // its own: text needs glyphs the offline style does not have (decision 16),
+    // so it stays in the DOM, anchored by its left edge just clear of the dot
+    // the layer above draws at the coordinate itself.
+    const registry = stationLabels.current;
     const labels = stations.map((station) => {
       const element = document.createElement("span");
       element.className = "live-station";
       element.textContent = station.iataCode;
       element.title = station.name;
       element.dataset.hub = String(station.isHub);
-      return new Marker({ element, anchor: "left", offset: [6, 10] })
+      element.dataset.selectedEndpoint = String(
+        selectedEndpoints.current.has(station.iataCode),
+      );
+      registry.set(station.iataCode, element);
+      return new Marker({ element, anchor: "left", offset: [8, 0] })
         .setLngLat([station.longitude, station.latitude])
         .addTo(map);
     });
     return () => {
       labels.forEach((label) => label.remove());
+      registry.clear();
     };
   }, [ready, stations]);
 
@@ -255,6 +330,10 @@ export function LiveMap({
     };
     (map.getSource("routes") as GeoJSONSource | undefined)?.setData(routes);
     const selected = items.find((item) => item.flight.id === selectedId);
+    selectedEndpoints.current = new Set(
+      selected ? [selected.flight.origin.iataCode, selected.flight.destination.iataCode] : [],
+    );
+    markSelectedEndpoints(stationLabels.current, selectedEndpoints.current);
     if (selected && lastSelection.current !== selectedId) fitFlight(map, selected);
     lastSelection.current = selectedId;
     const start = performance.now();
@@ -286,6 +365,7 @@ export function LiveMap({
     >
       <div
         ref={container}
+        className="live-map"
         role="region"
         aria-label="Live flight map"
         data-map-ready={ready}
