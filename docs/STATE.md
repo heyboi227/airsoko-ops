@@ -71,6 +71,17 @@ extended to connect them.
 
 Implementation details and the polling decision are recorded in decision 35.
 
+### Fixed since
+
+- **Station dots sat south-east of their airports.** The dot was part of the HTML
+  label, so it took the label's ten-pixel offset with it while the arcs ended at the
+  true coordinate — a visible miss at every zoom, and a few hundred kilometres at
+  zoom 1. Dots are a GL `circle` layer now, above the routes, and the label sits beside
+  the dot rather than carrying it. Aircraft markers shrink as the view widens, and
+  zoomed out the labels step back to the selected flight and its two airports, so a
+  continent is legible rather than a pile of overlapping circles. Recorded in
+  decision 35.
+
 ---
 
 ## What Phase 3 delivered
