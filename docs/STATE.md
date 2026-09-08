@@ -81,6 +81,13 @@ Implementation details and the polling decision are recorded in decision 35.
   zoomed out the labels step back to the selected flight and its two airports, so a
   continent is legible rather than a pile of overlapping circles. Recorded in
   decision 35.
+- **The recorded-entries specs went red for a whole day.** They filed their test flight
+  by copying the local times off today's first Belgrade departure, and the board
+  prints what is expected — actual, else estimated, else scheduled. On 2026-09-08 the
+  seed handed that sector an 88-minute delay, so the copied block was 60 minutes for
+  492 nm: a blocking finding, which no acknowledgement clears, and every pull request
+  that UTC day failed without a line of its own changing. The sector now comes from a
+  seeded pattern, whose times are the published ones whatever the clock says.
 
 ---
 
