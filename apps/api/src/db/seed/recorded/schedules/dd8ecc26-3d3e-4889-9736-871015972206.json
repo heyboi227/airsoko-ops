@@ -1,0 +1,31 @@
+{
+  "kind": "schedule",
+  "label": "SO341 2026-09-11 to 2027-09-11",
+  "row": {
+    "id": "dd8ecc26-3d3e-4889-9736-871015972206",
+    "flightNumber": "SO341",
+    "airlineId": "c346ca8a-b2ef-521c-a546-a8b8808f6ba7",
+    "routeId": "2140e8af-52a0-55e3-806c-3d86ff86959c",
+    "validFrom": "2026-09-11",
+    "validTo": "2027-09-11",
+    "operatingDays": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false
+    ],
+    "departureLocalTime": "10:35",
+    "arrivalLocalTime": "14:20",
+    "arrivalDayOffset": 0,
+    "aircraftTypeId": "d686d01d-4951-54bb-99f5-26702ac744bd",
+    "defaultAircraftId": null,
+    "flightType": "scheduled_passenger",
+    "season": null,
+    "active": true,
+    "createdAt": "2026-09-03T22:19:21.260Z",
+    "updatedAt": "2026-09-03T22:21:44.507Z"
+  }
+}
