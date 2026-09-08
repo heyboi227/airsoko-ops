@@ -157,6 +157,17 @@ This is the direct lesson of decision 1. Keeping dependencies current is a good 
 merging them without ever compiling the result is how a repository ends up two years
 out of sync with its own dependency tree.
 
+**Only the root directory is named.** `dependabot.yml` listed `/apps/*`, `/packages/*`
+and `/e2e` beside `/`, on the belief that the root entry would never propose an update
+to a workspace package. It does: Dependabot reads the workspaces from the root lockfile
+and bumps each manifest together with it (#27, #28, #36). The extra entries opened a
+second pull request per update from inside the workspace, where there is no lockfile,
+so it raised the manifest's range alone and `npm ci` refused the result (#30–#33, #38,
+#39). Dependabot closes those itself once the root pull request merges, which made them
+look like noise rather than a fault; naming the root alone stops them at the source, and
+since grouping is per directory it also folds one update across workspaces into a single
+pull request.
+
 ---
 
 ## 12. Deferred dependencies

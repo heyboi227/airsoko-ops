@@ -13,14 +13,15 @@ version: 2
 updates:
   - package-ecosystem: npm
     # The root manifest is a workspace host: every runtime dependency actually
-    # lives in apps/*, packages/* or e2e. A lone `directory: "/"` is what a
-    # single-package repository needs; this repository needs each workspace
-    # named, or updates to them are never proposed.
-    directories:
-      - "/"
-      - "/apps/*"
-      - "/packages/*"
-      - "/e2e"
+    # lives in apps/*, packages/* or e2e. The root is still the only directory
+    # to name. Dependabot reads the workspaces from the root lockfile and bumps
+    # each workspace manifest together with it -- one grouped update touched
+    # the api, web and e2e manifests at once (#27), others the web one (#28,
+    # #36). Naming the workspace directories as well opened a second pull
+    # request per update from inside each of them, where there is no lockfile:
+    # it raised the range in that manifest alone, `npm ci` refused the
+    # out-of-sync lockfile, and every check failed (#30-#33, #38, #39).
+    directory: "/"
     schedule:
       # An explicit time and zone. Without them Dependabot picks its own slot
       # and "it has not run yet" becomes indistinguishable from "it ran and
