@@ -1,17 +1,28 @@
+/*
+ * Markers are HTML, so they keep their pixel size while the map scales under
+ * them. Left at 34px a continent's worth of aircraft becomes one pile of
+ * circles once the view widens, so the marker shrinks with the zoom the map
+ * reports through --live-zoom: 34px from zoom 3.4 up, 22px from zoom 2.2 down.
+ */
+.live-map {
+  --live-marker-size: clamp(22px, calc(var(--live-zoom, 3.4) * 10px), 34px);
+}
 .live-marker {
-  width: 34px;
-  height: 34px;
+  width: var(--live-marker-size);
+  height: var(--live-marker-size);
+  display: grid;
+  place-items: center;
   border: 1px solid #558095;
   border-radius: 50%;
   background: #0c2635;
   color: #b7e5ff;
   cursor: pointer;
   box-shadow: 0 2px 5px #0008;
-  padding: 6px;
+  padding: 0;
 }
 .live-marker svg {
-  width: 20px;
-  height: 20px;
+  width: 58%;
+  height: 58%;
   display: block;
 }
 .live-marker[data-status="scheduled"],
@@ -43,7 +54,7 @@
 }
 .live-marker-label {
   position: absolute;
-  top: 37px;
+  top: calc(var(--live-marker-size, 34px) + 3px);
   left: 50%;
   transform: translateX(-50%);
   color: #f2f7fa;
@@ -56,30 +67,28 @@
   border-radius: 3px;
   pointer-events: none;
 }
+/*
+ * A station's dot is a GL circle layer drawn at the coordinate itself; this is
+ * only the code beside it, and it must never grow a dot of its own. The one it
+ * used to carry inherited the label's offset, which put every airport a fixed
+ * ten pixels south-east of where its arcs ended -- invisible zoomed in, a few
+ * hundred kilometres zoomed out.
+ */
 .live-station {
   color: #becbd7;
   font:
     10px "Segoe UI",
     sans-serif;
+  line-height: 1;
   text-shadow: 0 1px 3px #000;
   pointer-events: none;
-}
-.live-station::before {
-  content: "";
-  display: inline-block;
-  height: 5px;
-  width: 5px;
-  background: #8faab9;
-  border: 1px solid #071b28;
-  border-radius: 50%;
-  margin-right: 3px;
 }
 .live-station[data-hub="true"] {
   color: #fff;
   font-weight: 700;
 }
-.live-station[data-hub="true"]::before {
-  height: 8px;
-  width: 8px;
-  background: #e9f0f4;
+/* Zoomed out, labels step back to the selected flight and its two airports. */
+.live-map[data-zoom-band="far"] .live-station:not([data-selected-endpoint="true"]),
+.live-map[data-zoom-band="far"] .live-marker:not([aria-pressed="true"]) .live-marker-label {
+  display: none;
 }

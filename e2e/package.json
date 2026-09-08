@@ -11,6 +11,6 @@
   "devDependencies": {
     "@airsoko/contracts": "*",
     "@playwright/test": "^1.62.1",
-    "@types/node": "^26.4.0"
+    "@types/node": "^26.4.1"
   }
 }

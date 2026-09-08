@@ -19,7 +19,7 @@
     "@mui/material": "^9.4.0",
     "@mui/x-charts": "^9.12.0",
     "@tanstack/react-query": "^5.102.8",
-    "maplibre-gl": "^6.6.0",
+    "maplibre-gl": "^6.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.2.2"
   }
