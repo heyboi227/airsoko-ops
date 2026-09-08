@@ -1,0 +1,17 @@
+{
+  "kind": "route",
+  "label": "BEG-ABZ",
+  "row": {
+    "id": "207d55d5-3bf6-516d-9abd-45323b1f6b7e",
+    "originAirportId": "8250e076-46e8-55cf-9487-d95fd660a7fd",
+    "destinationAirportId": "81798dd5-316e-5842-8d01-c08a7655cb81",
+    "distanceNm": 1120,
+    "blockMinutes": 180,
+    "status": "planned",
+    "typicalAircraftTypeId": "d686d01d-4951-54bb-99f5-26702ac744bd",
+    "seasonStart": null,
+    "seasonEnd": null,
+    "createdAt": "2026-09-03T16:08:07.605Z",
+    "updatedAt": "2026-09-03T16:08:07.605Z"
+  }
+}
