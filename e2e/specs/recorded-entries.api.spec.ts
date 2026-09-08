@@ -92,27 +92,32 @@ async function mutate(
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-/** A route and a pair of local times taken from a sector flying today. */
-async function sectorFromToday(request: APIRequestContext, token: string) {
-  const response = await request.get("/api/flights", {
+/**
+ * A route and a pair of published local times, taken from a seeded pattern.
+ *
+ * Not from a flight on today's board: the board's local times are what is
+ * expected, actual-else-estimated-else-scheduled, and on a day the seed hands
+ * the first BEG departure a long delay they describe a block the rules refuse
+ * (2026-09-08: 88 minutes late out, 60 minutes gate to gate for 492 nm). A
+ * pattern's times are what the timetable prints, whatever the clock says.
+ */
+async function sectorFromTimetable(request: APIRequestContext, token: string) {
+  const response = await request.get("/api/schedules", {
     headers: auth(token),
-    params: { originIata: "BEG", limit: "20" },
+    params: { originIata: "BEG" },
   });
-  const body = (await response.json()) as {
+  const { items } = (await response.json()) as {
     items: {
       routeId: string;
-      serviceDate: string;
-      origin: { localTime: string };
-      destination: { localTime: string; localDate: string };
+      departureLocalTime: string;
+      arrivalLocalTime: string;
+      arrivalDayOffset: number;
     }[];
   };
-  const sector = body.items.find((item) => item.destination.localDate === item.serviceDate);
-  if (!sector) throw new Error("No same-day BEG departure to copy a route from.");
-  return {
-    routeId: sector.routeId,
-    departureLocalTime: sector.origin.localTime,
-    arrivalLocalTime: sector.destination.localTime,
-  };
+  const pattern = items[0];
+  if (!pattern) throw new Error("No BEG pattern to copy a sector from.");
+  const { routeId, departureLocalTime, arrivalLocalTime, arrivalDayOffset } = pattern;
+  return { routeId, departureLocalTime, arrivalLocalTime, arrivalDayOffset };
 }
 
 async function createFlight(
@@ -120,7 +125,7 @@ async function createFlight(
   token: string,
   record: boolean,
 ): Promise<string> {
-  const sector = await sectorFromToday(request, token);
+  const sector = await sectorFromTimetable(request, token);
   const body = await mutate(
     request,
     "POST",

@@ -19,7 +19,7 @@
     "scheduledArrival": "2026-09-16T12:20:00.000Z",
     "estimatedArrival": null,
     "actualArrival": null,
-    "aircraftId": null,
+    "aircraftId": "199fe9ed-b19f-53e8-a367-fb851e341fb4",
     "status": "scheduled",
     "phase": "preflight",
     "flightType": "scheduled_passenger",
@@ -33,9 +33,11 @@
     "arrivalGate": null,
     "baggageCarousel": null,
     "notes": null,
-    "overriddenFields": [],
+    "overriddenFields": [
+      "aircraftId"
+    ],
     "createdAt": "2026-09-03T22:19:21.260Z",
-    "updatedAt": "2026-09-03T22:21:44.507Z"
+    "updatedAt": "2026-09-08T21:13:30.534Z"
   },
   "statusEvents": []
 }
