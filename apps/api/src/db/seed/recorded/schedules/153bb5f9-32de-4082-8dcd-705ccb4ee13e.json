@@ -1,0 +1,31 @@
+{
+  "kind": "schedule",
+  "label": "SO531 2026-09-15 to 2027-09-15",
+  "row": {
+    "id": "153bb5f9-32de-4082-8dcd-705ccb4ee13e",
+    "flightNumber": "SO531",
+    "airlineId": "c346ca8a-b2ef-521c-a546-a8b8808f6ba7",
+    "routeId": "97fff08e-f4c9-5ff9-a996-fe4be06731bd",
+    "validFrom": "2026-09-15",
+    "validTo": "2027-09-15",
+    "operatingDays": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true
+    ],
+    "departureLocalTime": "18:15",
+    "arrivalLocalTime": "13:30",
+    "arrivalDayOffset": 1,
+    "aircraftTypeId": "f974d429-0702-52f5-bdb5-3f6b0d5c4304",
+    "defaultAircraftId": null,
+    "flightType": "scheduled_passenger",
+    "season": null,
+    "active": true,
+    "createdAt": "2026-09-09T22:04:05.168Z",
+    "updatedAt": "2026-09-09T22:19:13.232Z"
+  }
+}
