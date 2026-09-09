@@ -1,0 +1,31 @@
+{
+  "kind": "schedule",
+  "label": "SO530 2026-09-15 to 2027-09-15",
+  "row": {
+    "id": "56b4515f-1155-4a92-a7a5-a6ef2079726d",
+    "flightNumber": "SO530",
+    "airlineId": "c346ca8a-b2ef-521c-a546-a8b8808f6ba7",
+    "routeId": "fbcd8b13-ff4b-5f65-9924-5fe91f714b95",
+    "validFrom": "2026-09-15",
+    "validTo": "2027-09-15",
+    "operatingDays": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true
+    ],
+    "departureLocalTime": "11:35",
+    "arrivalLocalTime": "16:15",
+    "arrivalDayOffset": 0,
+    "aircraftTypeId": "f974d429-0702-52f5-bdb5-3f6b0d5c4304",
+    "defaultAircraftId": null,
+    "flightType": "scheduled_passenger",
+    "season": null,
+    "active": true,
+    "createdAt": "2026-09-09T22:00:00.575Z",
+    "updatedAt": "2026-09-09T22:00:00.575Z"
+  }
+}
