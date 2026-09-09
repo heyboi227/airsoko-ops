@@ -18,7 +18,7 @@
       true
     ],
     "departureLocalTime": "18:15",
-    "arrivalLocalTime": "13:55",
+    "arrivalLocalTime": "13:30",
     "arrivalDayOffset": 1,
     "aircraftTypeId": "f974d429-0702-52f5-bdb5-3f6b0d5c4304",
     "defaultAircraftId": null,
@@ -26,6 +26,6 @@
     "season": null,
     "active": true,
     "createdAt": "2026-09-09T22:04:05.168Z",
-    "updatedAt": "2026-09-09T22:07:08.540Z"
+    "updatedAt": "2026-09-09T22:19:13.232Z"
   }
 }

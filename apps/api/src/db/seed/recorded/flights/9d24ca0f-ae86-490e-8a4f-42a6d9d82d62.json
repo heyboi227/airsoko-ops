@@ -16,7 +16,7 @@
     "scheduledDeparture": "2027-06-25T00:15:00.000Z",
     "estimatedDeparture": null,
     "actualDeparture": null,
-    "scheduledArrival": "2027-06-25T11:55:00.000Z",
+    "scheduledArrival": "2027-06-25T11:30:00.000Z",
     "estimatedArrival": null,
     "actualArrival": null,
     "aircraftId": null,
@@ -35,7 +35,7 @@
     "notes": null,
     "overriddenFields": [],
     "createdAt": "2026-09-09T22:04:05.168Z",
-    "updatedAt": "2026-09-09T22:07:08.540Z"
+    "updatedAt": "2026-09-09T22:19:13.232Z"
   },
   "statusEvents": []
 }
