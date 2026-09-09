@@ -24,7 +24,7 @@
     "defaultAircraftId": null,
     "flightType": "scheduled_passenger",
     "season": null,
-    "active": false,
+    "active": true,
     "createdAt": "2026-09-09T22:04:05.168Z",
     "updatedAt": "2026-09-09T22:07:08.540Z"
   }
