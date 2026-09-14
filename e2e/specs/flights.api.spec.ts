@@ -53,6 +53,37 @@ interface FlightRow {
   } | null;
 }
 
+interface CandidateItem {
+  id: string;
+  registration: string;
+  serviceability: string;
+  /** The verdict on this sector alone. */
+  preview: Preview;
+  /** The verdict on both legs of the turn, when there is one to carry. */
+  returnLegPreview: Preview | null;
+}
+
+interface CandidatesBody {
+  items: CandidateItem[];
+  total: number;
+  generatedAt: string;
+  returnLeg: {
+    id: string;
+    flightNumber: string;
+    originIata: string;
+    destinationIata: string;
+    serviceDate: string;
+    groundMinutes: number;
+    follows: boolean;
+    aircraft: { id: string; registration: string } | null;
+  } | null;
+}
+
+/** The verdict for the change the picker actually offers: both legs by default. */
+function offered(item: CandidateItem): Preview {
+  return item.returnLegPreview ?? item.preview;
+}
+
 interface FlightList {
   items: FlightRow[];
   total: number;
@@ -244,9 +275,7 @@ test.describe("Scenario A: aircraft reassignment", () => {
       headers: auth(token),
     });
     expect(response.status()).toBe(200);
-    const { items } = (await response.json()) as {
-      items: { id: string; registration: string; serviceability: string; preview: Preview }[];
-    };
+    const { items } = (await response.json()) as CandidatesBody;
 
     // The whole active fleet comes back, each tail with the rules' own verdict.
     const fleet = await request.get("/api/aircraft", { headers: auth(token) });
@@ -266,9 +295,11 @@ test.describe("Scenario A: aircraft reassignment", () => {
     expect(unavailable?.detail).toContain(unserviceable.registration);
 
     // The verdict the picker shows is the one the review reaches: same rule,
-    // same rows. Checked on a refused tail and on one the rules would accept.
+    // same rows. Checked on a refused tail and on one the rules would accept,
+    // and against the row's own verdict for the change on offer -- the return
+    // leg travels with the assignment unless it is declined.
     const accepted = items.find(
-      (item) => item.preview.applicable && item.id !== target.aircraft?.id,
+      (item) => offered(item).applicable && item.id !== target.aircraft?.id,
     );
     for (const item of [unserviceable, ...(accepted ? [accepted] : [])]) {
       const review = await request.post(`/api/flights/${target.id}/aircraft`, {
@@ -277,14 +308,134 @@ test.describe("Scenario A: aircraft reassignment", () => {
       });
       expect(review.status(), item.registration).toBe(200);
       const preview = (await review.json()) as Preview;
+      const row = offered(item);
 
-      expect(preview.applicable).toBe(item.preview.applicable);
+      expect(preview.applicable).toBe(row.applicable);
       expect(preview.findings.map((finding) => finding.code).sort()).toEqual(
-        item.preview.findings.map((finding) => finding.code).sort(),
+        row.findings.map((finding) => finding.code).sort(),
       );
       expect([...preview.requiresAcknowledgement].sort()).toEqual(
-        [...item.preview.requiresAcknowledgement].sort(),
+        [...row.requiresAcknowledgement].sort(),
       );
+    }
+  });
+
+  test("carries the airframe onto the return leg, and leaves it when declined", async ({
+    request,
+  }) => {
+    const token = await signIn(request, ACCOUNTS.opsController);
+    const date = await futureDate(request, token);
+    const day = await flights(request, token, { from: date, to: date });
+
+    // A sector the timetable pairs: out on one leg, home on the other. Which
+    // flight that is depends on the seed's reference date, so it is found
+    // rather than named.
+    let target: FlightRow | null = null;
+    let picker: CandidatesBody | null = null;
+    for (const item of day.items.filter((row) => row.status === "scheduled" && row.aircraft)) {
+      const response = await request.get(`/api/flights/${item.id}/aircraft/candidates`, {
+        headers: auth(token),
+      });
+      expect(response.status()).toBe(200);
+      const body = (await response.json()) as CandidatesBody;
+      if (body.returnLeg) {
+        target = item;
+        picker = body;
+        break;
+      }
+    }
+    if (!target || !picker?.returnLeg) {
+      throw new Error("No flight with a return leg on the chosen date.");
+    }
+    const leg = picker.returnLeg;
+
+    // The pair is the pair: opposite endpoints, one turnaround apart.
+    expect(leg.originIata).toBe(target.destination.iataCode);
+    expect(leg.destinationIata).toBe(target.origin.iataCode);
+    expect(leg.groundMinutes).toBeGreaterThanOrEqual(0);
+
+    const chosen = picker.items.find(
+      (item) => offered(item).applicable && item.id !== target.aircraft?.id,
+    );
+    if (!chosen) throw new Error("No airframe the rules would accept for the whole turn.");
+    expect(chosen.returnLegPreview).not.toBeNull();
+
+    const review = async (includeReturnLeg: boolean) => {
+      const response = await request.post(`/api/flights/${target.id}/aircraft`, {
+        headers: auth(token),
+        data: { aircraftId: chosen.id, includeReturnLeg, mutation: { preview: true } },
+      });
+      expect(response.status(), await response.text()).toBe(200);
+      return (await response.json()) as Preview;
+    };
+
+    const names = (preview: Preview) =>
+      preview.consequences.some((item) => item.summary.includes(leg.flightNumber));
+
+    // Declining it evaluates this sector alone; accepting it says so, by name.
+    expect(names(await review(false))).toBe(false);
+    const both = await review(true);
+    expect(names(both)).toBe(true);
+    expect(both.findings.map((finding) => finding.code).sort()).toEqual(
+      chosen.returnLegPreview?.findings.map((finding) => finding.code).sort(),
+    );
+
+    const before = { outbound: target.aircraft, leg: leg.aircraft };
+    try {
+      const applied = await applyAcknowledging(
+        request,
+        "POST",
+        `/api/flights/${target.id}/aircraft`,
+        token,
+        { aircraftId: chosen.id },
+        "Scenario A: the whole turn",
+      );
+      expect(applied.status(), await applied.text()).toBe(200);
+
+      // One airframe, both legs.
+      for (const id of [target.id, leg.id]) {
+        const response = await request.get(`/api/flights/${id}`, { headers: auth(token) });
+        const { flight } = (await response.json()) as { flight: FlightRow };
+        expect(flight.aircraft?.id, flight.flightNumber).toBe(chosen.id);
+      }
+    } finally {
+      // The rotation goes back the way it came off, which is the feature
+      // again rather than an aside: where one tail flew both legs, putting it
+      // back on the outbound alone would leave the aeroplane at the turn
+      // station with no way home, and the rules refuse that -- rightly. Legs
+      // that were flown by different tails go back one at a time, each with
+      // the offer declined so that restoring one does not undo the other.
+      const asOne = before.outbound !== null && before.outbound.id === before.leg?.id;
+      const restores: readonly (readonly [string, string | null, boolean])[] = asOne
+        ? [[target.id, before.outbound?.id ?? null, true]]
+        : [
+            [target.id, before.outbound?.id ?? null, false],
+            [leg.id, before.leg?.id ?? null, false],
+          ];
+
+      for (const [flightId, aircraftId, includeReturnLeg] of restores) {
+        const restored = await applyAcknowledging(
+          request,
+          "POST",
+          `/api/flights/${flightId}/aircraft`,
+          token,
+          { aircraftId, includeReturnLeg },
+          "Scenario A restore",
+        );
+        expect(restored.status(), await restored.text()).toBe(200);
+      }
+
+      // Back as found, on both legs.
+      for (const [flightId, original] of [
+        [target.id, before.outbound],
+        [leg.id, before.leg],
+      ] as const) {
+        const response = await request.get(`/api/flights/${flightId}`, {
+          headers: auth(token),
+        });
+        const { flight } = (await response.json()) as { flight: FlightRow };
+        expect(flight.aircraft?.id ?? null, flight.flightNumber).toBe(original?.id ?? null);
+      }
     }
   });
 

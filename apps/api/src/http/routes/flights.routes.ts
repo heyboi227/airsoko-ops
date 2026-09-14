@@ -18,6 +18,7 @@ import {
 } from "@airsoko/contracts";
 import {
   DEFAULT_POLICY,
+  EvaluationBuilder,
   PHASE_FOR_STATUS,
   addLocalDays,
   addMinutes,
@@ -28,6 +29,7 @@ import {
   evaluateFlightSchedule,
   evaluateRecordDelay,
   evaluateReleaseAircraft,
+  evaluateRotationAssignment,
   evaluateSeriesEdit,
   evaluateStatusChange,
   expandSchedule,
@@ -39,6 +41,8 @@ import {
   zonedTimeToInstant,
   type AssignAircraftContext,
   type CandidateAircraft,
+  type Evaluation,
+  type ExistingCommitment,
   type SectorToFly,
 } from "@airsoko/domain";
 import { db, type Executor } from "../../db/client.ts";
@@ -59,9 +63,11 @@ import {
   loadMaintenanceWindowsByAircraft,
   loadNextSector,
   loadNumberClashes,
+  loadReturnLeg,
   loadRouteEndpoints,
   loadScheduleOccurrences,
   shiftDate,
+  type ReturnLegFacts,
 } from "../../flights/state.ts";
 import { loadFleet } from "../../fleet/state.ts";
 import { actorOf, requireAuth, requirePermission } from "../auth.ts";
@@ -582,32 +588,42 @@ flightsRouter.get(
     if (!flight) throw notFound(`Flight ${id}`);
     const route = await loadRouteEndpoints(flight.routeId);
     if (!route) throw notFound(`Route ${flight.routeId}`);
-    const sector = sectorToFly(flight, route, await plannedTypeFor(flight.scheduleId));
 
     const fleet = await loadFleet(now);
     const ids = fleet.map((item) => item.id);
-    const [candidates, factsFor] = await Promise.all([
+    const [candidates, rotation] = await Promise.all([
       loadCandidates(ids),
-      loadAssignmentFacts(ids, flight),
+      loadRotationFacts(flight, route, ids, now),
     ]);
+
+    const verdict = (evaluation: Evaluation) =>
+      decide("flight.assign_aircraft", evaluation, { acknowledgedWarnings: [] }).preview;
 
     const items = fleet.flatMap((item) => {
       // Retired between the two reads: no longer a candidate.
       const candidate = candidates.get(item.id);
       if (!candidate) return [];
 
-      const evaluation = evaluateAircraftAssignment(candidate, sector, {
-        now,
-        policy: DEFAULT_POLICY,
-        ...factsFor(item.id),
-      });
-      const { preview } = decide("flight.assign_aircraft", evaluation, {
-        acknowledgedWarnings: [],
-      });
-      return [{ ...item, preview }];
+      // Two verdicts, because the operator has two choices in front of them.
+      // The picker offers the return leg by default and can be told not to,
+      // and a row showing the verdict for a change the operator has just
+      // declined would be a row disagreeing with its own review.
+      const withReturnLeg = rotation.withReturnLeg(candidate);
+      return [
+        {
+          ...item,
+          preview: verdict(rotation.alone(candidate)),
+          returnLegPreview: withReturnLeg ? verdict(withReturnLeg) : null,
+        },
+      ];
     });
 
-    res.json({ items, total: items.length, generatedAt: now });
+    res.json({
+      items,
+      total: items.length,
+      generatedAt: now,
+      returnLeg: rotation.returnLeg ? describeReturnLeg(rotation.returnLeg) : null,
+    });
   },
 );
 
@@ -626,12 +642,19 @@ flightsRouter.post(
     const flight = await loadFlightFacts(id);
     if (!flight) throw notFound(`Flight ${id}`);
     if (flight.aircraftId === input.aircraftId) {
-      throw new ApiProblem(
-        "CONFLICT",
-        input.aircraftId
-          ? `${flight.aircraftRegistration} already operates ${flight.flightNumber}.`
-          : `${flight.flightNumber} has no aircraft assigned.`,
-      );
+      // A change that changes nothing is a conflict rather than a write. With
+      // the return leg on offer, though, "already operates this sector" is not
+      // yet nothing to do: the rotation's other half may still be short of it.
+      const leg =
+        input.aircraftId && input.includeReturnLeg ? await loadReturnLeg(flight) : null;
+      if (!leg || leg.aircraftId === input.aircraftId) {
+        throw new ApiProblem(
+          "CONFLICT",
+          input.aircraftId
+            ? `${flight.aircraftRegistration} already operates ${flight.flightNumber}.`
+            : `${flight.flightNumber} has no aircraft assigned.`,
+        );
+      }
     }
 
     const route = await loadRouteEndpoints(flight.routeId);
@@ -641,35 +664,80 @@ flightsRouter.post(
     // nothing", which would have to answer questions about an aircraft that
     // does not exist.
     if (input.aircraftId === null) {
+      // The return leg comes off with it, when it is the same airframe on
+      // both: a rotation released by halves leaves an aeroplane booked to
+      // bring home a service it no longer takes out.
+      const releasedFrom = async (tx: Executor) => {
+        if (!input.includeReturnLeg) return null;
+        const leg = await loadReturnLeg(flight, tx);
+        return leg && leg.aircraftId === flight.aircraftId ? leg : null;
+      };
+
       const outcome = await runIntent({
         intent: "flight.release_aircraft",
         actor,
         options,
         now,
-        evaluate: async () => evaluateReleaseAircraft(flight, { now }),
+        evaluate: async (tx) => {
+          const evaluation = evaluateReleaseAircraft(flight, { now });
+          const leg = await releasedFrom(tx);
+          if (!leg) return evaluation;
+          return new EvaluationBuilder()
+            .merge(evaluation)
+            .merge(evaluateReleaseAircraft(leg, { now }))
+            .build();
+        },
         apply: async (tx) => {
+          const leg = await releasedFrom(tx);
+          const released = [
+            {
+              id,
+              flightNumber: flight.flightNumber,
+              pair: `${route.origin.iataCode}-${route.destination.iataCode}`,
+            },
+            ...(leg
+              ? [
+                  {
+                    id: leg.id,
+                    flightNumber: leg.flightNumber,
+                    pair: `${leg.originIata}-${leg.destinationIata}`,
+                  },
+                ]
+              : []),
+          ];
+
           await tx
             .update(flightInstances)
             .set({ aircraftId: null, updatedAt: now })
-            .where(eq(flightInstances.id, id));
+            .where(
+              inArray(
+                flightInstances.id,
+                released.map((item) => item.id),
+              ),
+            );
 
           return {
-            value: { id, flightNumber: flight.flightNumber, aircraft: null },
-            audit: {
+            value: {
+              id,
+              flightNumber: flight.flightNumber,
+              aircraft: null,
+              returnLeg: leg
+                ? describeReturnLeg({ ...leg, aircraftId: null, aircraftRegistration: null })
+                : null,
+            },
+            audit: released.map((item) => ({
               action: "flight.release_aircraft",
-              resource: resourceRef("flight", id, flight.flightNumber),
+              resource: resourceRef("flight", item.id, item.flightNumber),
               previousValue: { registration: flight.aircraftRegistration },
               newValue: { registration: null },
-            },
-            alerts: [
-              {
-                severity: "critical" as const,
-                code: "FLIGHT_NO_AIRCRAFT_ASSIGNED",
-                title: `${flight.flightNumber} has no aircraft`,
-                detail: `${flight.aircraftRegistration} was released from ${flight.flightNumber} ${route.origin.iataCode}-${route.destination.iataCode}. The sector needs a replacement airframe.`,
-                resource: resourceRef("flight", id, flight.flightNumber),
-              },
-            ],
+            })),
+            alerts: released.map((item) => ({
+              severity: "critical" as const,
+              code: "FLIGHT_NO_AIRCRAFT_ASSIGNED",
+              title: `${item.flightNumber} has no aircraft`,
+              detail: `${flight.aircraftRegistration} was released from ${item.flightNumber} ${item.pair}. The sector needs a replacement airframe.`,
+              resource: resourceRef("flight", item.id, item.flightNumber),
+            })),
           };
         },
       });
@@ -681,7 +749,12 @@ flightsRouter.post(
     const candidate = await loadCandidate(input.aircraftId);
     if (!candidate) throw notFound(`Aircraft ${input.aircraftId}`);
 
-    const sector = sectorToFly(flight, route, await plannedTypeFor(flight.scheduleId));
+    /** The return leg the airframe is carried onto, or null for the sector alone. */
+    const carriedTo = async (tx: Executor) => {
+      if (!input.includeReturnLeg) return null;
+      const leg = await loadReturnLeg(flight, tx);
+      return leg && leg.aircraftId !== candidate.id ? leg : null;
+    };
 
     const outcome = await runIntent({
       intent: "flight.assign_aircraft",
@@ -689,52 +762,83 @@ flightsRouter.post(
       options,
       now,
       evaluate: async (tx) => {
-        const factsFor = await loadAssignmentFacts([candidate.id], flight, tx);
-        return evaluateAircraftAssignment(candidate, sector, {
-          now,
-          policy: DEFAULT_POLICY,
-          ...factsFor(candidate.id),
-        });
+        const rotation = await loadRotationFacts(flight, route, [candidate.id], now, tx);
+        const both = input.includeReturnLeg ? rotation.withReturnLeg(candidate) : null;
+        return both ?? rotation.alone(candidate);
       },
       apply: async (tx) => {
-        await tx
-          .update(flightInstances)
-          .set({
-            aircraftId: candidate.id,
-            // A hand-picked airframe is this occurrence's own decision, and a
-            // later series edit must not quietly put the planned type back.
-            ...(flight.scheduleId
-              ? {
-                  overriddenFields: [
-                    ...new Set<OverridableField>([...flight.overriddenFields, "aircraftId"]),
-                  ],
-                }
-              : {}),
-            updatedAt: now,
-          })
-          .where(eq(flightInstances.id, id));
+        const leg = await carriedTo(tx);
+        const displaced = leg?.aircraftRegistration ?? null;
+        // Only what actually changes is written, and only what is written is
+        // audited: an unchanged outbound would otherwise leave a trail entry
+        // claiming an assignment that had already happened.
+        const legs = [flight, ...(leg ? [leg] : [])].filter(
+          (target) => target.aircraftId !== candidate.id,
+        );
+        if (legs.length === 0) {
+          // The return leg took this airframe between the guard above and
+          // here. Nothing is left to do, and an intent that changes nothing
+          // should not report an assignment it did not make.
+          throw new ApiProblem(
+            "CONFLICT",
+            `${candidate.registration} already operates ${flight.flightNumber} and its return leg.`,
+          );
+        }
+
+        for (const target of legs) {
+          await tx
+            .update(flightInstances)
+            .set({
+              aircraftId: candidate.id,
+              // A hand-picked airframe is this occurrence's own decision, and a
+              // later series edit must not quietly put the planned type back.
+              ...(target.scheduleId
+                ? {
+                    overriddenFields: [
+                      ...new Set<OverridableField>([...target.overriddenFields, "aircraftId"]),
+                    ],
+                  }
+                : {}),
+              updatedAt: now,
+            })
+            .where(eq(flightInstances.id, target.id));
+        }
+
+        const assigned = {
+          id: candidate.id,
+          registration: candidate.registration,
+          seatCapacity: candidate.seatCapacity,
+        };
 
         return {
           value: {
             id,
             flightNumber: flight.flightNumber,
-            aircraft: {
-              id: candidate.id,
-              registration: candidate.registration,
-              seatCapacity: candidate.seatCapacity,
-            },
+            aircraft: assigned,
+            returnLeg: leg
+              ? describeReturnLeg({
+                  ...leg,
+                  aircraftId: candidate.id,
+                  aircraftRegistration: candidate.registration,
+                })
+              : null,
           },
-          audit: {
+          audit: legs.map((target) => ({
             action: "flight.assign_aircraft",
-            resource: resourceRef("flight", id, flight.flightNumber),
-            previousValue: { registration: flight.aircraftRegistration },
+            resource: resourceRef("flight", target.id, target.flightNumber),
+            previousValue: {
+              registration:
+                target.id === id ? flight.aircraftRegistration : (displaced ?? null),
+            },
             newValue: {
               registration: candidate.registration,
               type: candidate.typeCode,
               // The layout, not a stored total: capacity is summed from it.
               seatsByCabin: candidate.seatsByCabin,
             },
-          },
+          })),
+          // No alert: the return leg gains an airframe rather than losing one,
+          // and the tail that came off it simply has a free slot in its day.
         };
       },
     });
@@ -1287,7 +1391,7 @@ async function loadAssignmentFacts(
       aircraftIds,
       shiftDate(flight.serviceDate, -1),
       shiftDate(flight.serviceDate, 1),
-      flight.id,
+      [flight.id],
       executor,
     ),
     loadMaintenanceWindowsByAircraft(
@@ -1304,6 +1408,159 @@ async function loadAssignmentFacts(
     commitments: commitments.get(aircraftId) ?? [],
     maintenanceWindows: maintenanceWindows.get(aircraftId) ?? [],
   });
+}
+
+/**
+ * The rotation an assignment reaches: this sector, and the return leg the
+ * change is carried onto.
+ *
+ * An out-and-back is two sectors and one aeroplane, so re-equipping the
+ * outbound alone is how a rotation ends up split between two tails. The
+ * return leg is offered alongside, the way filing a route files its pair
+ * (decision 33), and it is inferred rather than declared -- `loadReturnLeg`
+ * finds the counter-direction sector this flight turns around on.
+ *
+ * Built once and read twice, by the picker and by the review, for the reason
+ * the facts above are: a verdict an operator read on the row and the
+ * evaluation they confirm against must come from the same rows.
+ *
+ * The two legs each get the other as a commitment. Neither is a commitment of
+ * this airframe in any table yet -- that is what is being decided -- so
+ * without it the one check that matters most here, whether the aeroplane can
+ * turn around in time to fly its own return, would never run.
+ */
+interface RotationFacts {
+  sector: SectorToFly;
+  returnLeg: ReturnLegFacts | null;
+  /** This sector alone, as it was before the return leg was ever offered. */
+  alone: (candidate: CandidateAircraft) => Evaluation;
+  /**
+   * Both legs, together. Null when there is no return leg, or when the tail
+   * already flies it and the offer would carry nothing.
+   */
+  withReturnLeg: (candidate: CandidateAircraft) => Evaluation | null;
+}
+
+function commitmentOf(
+  flight: {
+    id: string;
+    flightNumber: string;
+    scheduledDeparture: string;
+    scheduledArrival: string;
+  },
+  sector: SectorToFly,
+): ExistingCommitment {
+  return {
+    flightId: flight.id,
+    flightNumber: flight.flightNumber,
+    originIata: sector.originIata,
+    destinationIata: sector.destinationIata,
+    departure: flight.scheduledDeparture,
+    arrival: flight.scheduledArrival,
+  };
+}
+
+async function loadRotationFacts(
+  flight: {
+    id: string;
+    flightNumber: string;
+    serviceDate: string;
+    scheduledDeparture: string;
+    scheduledArrival: string;
+    originAirportId: string;
+    destinationAirportId: string;
+    scheduleId: string | null;
+  },
+  route: RouteEndpoints,
+  aircraftIds: readonly string[],
+  now: string,
+  executor: Executor = db,
+): Promise<RotationFacts> {
+  const sector = sectorToFly(flight, route, await plannedTypeFor(flight.scheduleId));
+  const [outboundFacts, leg] = await Promise.all([
+    loadAssignmentFacts(aircraftIds, flight, executor),
+    loadReturnLeg(flight, executor),
+  ]);
+
+  const alone = (candidate: CandidateAircraft) =>
+    evaluateAircraftAssignment(candidate, sector, {
+      now,
+      policy: DEFAULT_POLICY,
+      ...outboundFacts(candidate.id),
+    });
+
+  const legRoute = leg ? await loadRouteEndpoints(leg.routeId, executor) : null;
+  if (!leg || !legRoute) {
+    return { sector, returnLeg: null, alone, withReturnLeg: () => null };
+  }
+
+  const legSector = sectorToFly(leg, legRoute, await plannedTypeFor(leg.scheduleId));
+  const legFacts = await loadAssignmentFacts(aircraftIds, leg, executor);
+  const outboundCommitment = commitmentOf(flight, sector);
+  const legCommitment = commitmentOf(leg, legSector);
+
+  const withReturnLeg = (candidate: CandidateAircraft) => {
+    // Already on the return leg: the offer carries nothing, and saying so
+    // twice would put a second verdict on a tail whose day does not change.
+    if (leg.aircraftId === candidate.id) return null;
+
+    const outbound = outboundFacts(candidate.id);
+    const returning = legFacts(candidate.id);
+
+    return evaluateRotationAssignment(
+      candidate,
+      {
+        sector,
+        context: {
+          now,
+          policy: DEFAULT_POLICY,
+          maintenanceWindows: outbound.maintenanceWindows,
+          commitments: [
+            ...outbound.commitments.filter((item) => item.flightId !== leg.id),
+            legCommitment,
+          ],
+        },
+      },
+      {
+        sector: legSector,
+        context: {
+          now,
+          policy: DEFAULT_POLICY,
+          maintenanceWindows: returning.maintenanceWindows,
+          commitments: [
+            ...returning.commitments.filter((item) => item.flightId !== flight.id),
+            outboundCommitment,
+          ],
+        },
+        displacing:
+          leg.aircraftId && leg.aircraftRegistration
+            ? { id: leg.aircraftId, registration: leg.aircraftRegistration }
+            : null,
+      },
+    );
+  };
+
+  return { sector, returnLeg: leg, alone, withReturnLeg };
+}
+
+/** How the return leg is described wherever one is offered or reported. */
+function describeReturnLeg(leg: ReturnLegFacts) {
+  return {
+    id: leg.id,
+    flightNumber: leg.flightNumber,
+    originIata: leg.originIata,
+    destinationIata: leg.destinationIata,
+    serviceDate: leg.serviceDate,
+    scheduledDeparture: leg.scheduledDeparture,
+    /** Ground time at the turn station, which is what makes these two a pair. */
+    groundMinutes: leg.groundMinutes,
+    /** False when the return leg is the sector this one comes home from. */
+    follows: leg.follows,
+    aircraft:
+      leg.aircraftId && leg.aircraftRegistration
+        ? { id: leg.aircraftId, registration: leg.aircraftRegistration }
+        : null,
+  };
 }
 
 /**

@@ -328,6 +328,113 @@ export function evaluateAircraftAssignment(
   return builder.build();
 }
 
+/**
+ * The other half of an out-and-back, as the assignment reads it.
+ *
+ * `context.commitments` is the caller's to assemble, and it must already carry
+ * the outbound sector: the whole point of pairing the legs is that the rule
+ * sees the turnaround between them, and the outbound is not yet a commitment
+ * of this airframe in any table when the question is asked.
+ */
+export interface ReturnLegToFly {
+  sector: SectorToFly;
+  context: AssignAircraftContext;
+  /** The airframe standing on the return leg now, when it is not this one. */
+  displacing: { id: Id; registration: string } | null;
+}
+
+/**
+ * One airframe, both legs of the turn.
+ *
+ * An out-and-back is two sectors and one aeroplane. Re-equipping only the
+ * outbound is how a rotation ends up split between two tails -- the aeroplane
+ * flies out and something else has to bring the service home -- so assigning
+ * the outbound offers the return leg alongside, the way filing a route files
+ * its pair (decision 33).
+ *
+ * The second sector is judged on its own terms rather than assumed to inherit
+ * the first's verdict: the return leg has its own timing, its own turnaround
+ * either side, and its own hangar time to miss. A finding the two sectors word
+ * identically -- a check coming due, which is a fact about the aeroplane -- is
+ * said once. A finding that names its sector is said about each, because those
+ * are two statements about two flights, and an operator reading "refused on the
+ * outbound" should not have to assume the return leg was refused too.
+ *
+ * With no return leg, or with the operator declining it, this is the single
+ * sector's evaluation and nothing more.
+ */
+export function evaluateRotationAssignment(
+  aircraft: CandidateAircraft,
+  outbound: { sector: SectorToFly; context: AssignAircraftContext },
+  returnLeg: ReturnLegToFly | null,
+): Evaluation {
+  const first = evaluateAircraftAssignment(aircraft, outbound.sector, outbound.context);
+  if (!returnLeg) return first;
+
+  const second = evaluateAircraftAssignment(aircraft, returnLeg.sector, returnLeg.context);
+  const builder = new EvaluationBuilder().merge(first);
+
+  const said = new Set(first.findings.map(findingPrint));
+  builder.add(...second.findings.filter((finding) => !said.has(findingPrint(finding))));
+
+  const expected = new Set(first.consequences.map((item) => `${item.kind}|${item.summary}`));
+  builder.expect(
+    ...second.consequences.filter((item) => !expected.has(`${item.kind}|${item.summary}`)),
+  );
+
+  // Taking the return leg off another tail is a second aeroplane's day
+  // changing, which is exactly the kind of thing an operator acknowledges
+  // rather than discovers afterwards.
+  if (returnLeg.displacing) {
+    const leg = returnLeg.sector;
+    builder
+      .add(
+        warning(
+          "AIRCRAFT_RETURN_LEG_DISPLACED",
+          `${returnLeg.displacing.registration} comes off ${leg.flightNumber}`,
+          `${leg.flightNumber} (${leg.originIata}-${leg.destinationIata}) is flown by ${returnLeg.displacing.registration}. Carrying ${aircraft.registration} onto the return leg takes it off, and that sector has no airframe until one is assigned.`,
+          {
+            subject: resourceRef("flight", leg.flightId, leg.flightNumber),
+            related: [
+              resourceRef(
+                "aircraft",
+                returnLeg.displacing.id,
+                returnLeg.displacing.registration,
+              ),
+            ],
+          },
+        ),
+      )
+      .expect(
+        consequence(
+          "aircraft_released",
+          `${returnLeg.displacing.registration} needs another sector or none: it no longer flies ${leg.flightNumber}`,
+          {
+            related: [
+              resourceRef(
+                "aircraft",
+                returnLeg.displacing.id,
+                returnLeg.displacing.registration,
+              ),
+            ],
+          },
+        ),
+      );
+  }
+
+  return builder.build();
+}
+
+/** Two findings are the same finding when they say the same thing. */
+function findingPrint(finding: {
+  code: string;
+  severity: string;
+  title: string;
+  detail: string;
+}) {
+  return `${finding.code}|${finding.severity}|${finding.title}|${finding.detail}`;
+}
+
 function describeCabins(seatsByCabin: Readonly<Record<string, number>>): string {
   return Object.entries(seatsByCabin)
     .map(([cabin, seats]) => `${seats} ${cabin.replace(/_/g, " ")}`)

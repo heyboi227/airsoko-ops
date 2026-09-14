@@ -237,6 +237,35 @@ trigger so a pair opened in the console is recorded as seed data like everything
 
 ---
 
+## Since Phase 4: the return leg travels with the airframe
+
+Re-equipping a sector used to touch one flight. An out-and-back is two sectors and one
+aeroplane, so that left the ordinary case — BEG-ABZ out, ABZ-BEG home — split between two
+tails, with the service flying out on the new airframe and something else expected to bring
+it back. The picker now offers the return leg alongside the choice, ticked, and the airframe
+is carried onto both legs when the change is applied. Releasing is the mirror image: where
+one tail flies both, it comes off both, because a rotation released by halves leaves an
+aeroplane booked to bring home a service it no longer takes out. Assigning from the return
+leg reaches the outbound in the same way — the pairing is symmetric.
+
+Nothing declares two flights a pair, so `loadReturnLeg` infers it: the counter-direction
+sector at the turn station, nearer side first, within `rotation.returnLegWithinMinutes`
+(twelve hours, so a night stop counts and tomorrow's service does not). Both legs are then
+judged on their own terms by `evaluateRotationAssignment`, each holding the other as a
+commitment — otherwise the check that matters most here, whether the aeroplane can turn
+around in time to fly its own return, would never run at all. `AIRCRAFT_RETURN_LEG_DISPLACED`
+makes taking the leg off another tail a tick rather than a discovery.
+
+Each candidate row carries two verdicts, `preview` and `returnLegPreview`, and shows the one
+matching the tick: a row advertising the verdict for a change the operator has just declined
+would break decision 34's promise as surely as a stale one would. Seven more unit tests cover
+the merged evaluation — the workable turn, the turn that cannot be made, what is said once and
+what is said per sector, and the displaced tail — with an acceptance test at the API that
+applies the whole turn and puts both legs back, and one through the browser on the offer
+itself. Decision 36 records the reasoning.
+
+---
+
 ## Since Phase 3: the picker checks every tail
 
 Choosing an airframe used to be the first thing the rules said anything about: the picker

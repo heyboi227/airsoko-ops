@@ -254,8 +254,41 @@ test.describe("Scenario A: aircraft reassignment", () => {
     await expect(
       page.getByText("blocking conflict").or(page.getByText("blocking conflicts")),
     ).toBeVisible();
-    await expect(page.getByText(/cannot be assigned to SO\d+/)).toBeVisible();
+    // First: an out-and-back is refused on each of its legs by name, so the
+    // confirmation lists the refusal once per sector.
+    await expect(page.getByText(/cannot be assigned to SO\d+/).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Assign", exact: true })).toBeDisabled();
+  });
+
+  test("the return leg is offered with the choice, and named", async ({ page }) => {
+    await signInAs(page, ACCOUNTS.opsController);
+    await page.goto(`/flights?date=${futureDate()}&status=scheduled`);
+    await settled(page);
+
+    // An out-and-back rather than a one-way: the picker only offers the return
+    // leg where the timetable has one, so the first flight that has one is the
+    // one this test wants.
+    const offer = page.getByRole("checkbox", { name: /Carry the airframe onto SO/ });
+    for (const index of [1, 2, 3, 4, 5]) {
+      await page.goto(`/flights?date=${futureDate()}&status=scheduled`);
+      await settled(page);
+      await page.getByRole("row").nth(index).click();
+      await expect(page.getByRole("heading", { name: /^SO\d+$/ })).toBeVisible();
+      await page.getByRole("button", { name: "Change aircraft" }).click();
+      await expect(page.getByRole("columnheader", { name: "Checks" })).toBeVisible();
+      if (await offer.isVisible()) break;
+      await page.getByRole("button", { name: "Close" }).click();
+    }
+    await expect(offer).toBeVisible();
+
+    // On by default: the whole turn moves unless somebody splits it.
+    await expect(offer).toBeChecked();
+    await expect(page.getByText(/turns around on|comes home from/)).toBeVisible();
+    await expect(page.getByText(/and against SO\d+ on the same terms/)).toBeVisible();
+
+    // Declining it puts the picker back to judging this sector alone.
+    await offer.uncheck();
+    await expect(page.getByText(/and against SO\d+ on the same terms/)).toBeHidden();
   });
 
   test("releasing an airframe warns before it leaves a sector with nothing to fly", async ({
@@ -273,7 +306,9 @@ test.describe("Scenario A: aircraft reassignment", () => {
     await page.getByRole("button", { name: /^Release YU-/ }).click();
 
     const release = page.getByRole("button", { name: "Release", exact: true });
-    await expect(page.getByText(/is left without an aircraft/)).toBeVisible();
+    // First: where the same airframe flies the return leg, it comes off both,
+    // and each sector says so for itself.
+    await expect(page.getByText(/is left without an aircraft/).first()).toBeVisible();
     // The warning has to be accepted by its code before anything is written.
     await expect(release).toBeDisabled();
 

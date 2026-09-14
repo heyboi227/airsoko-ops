@@ -864,3 +864,68 @@ the two bases are 130 km apart, which at zoom 1 is one label's width.
 **External mode is explicit about absence.** `TELEMETRY_PROVIDER=external`
 returns unavailable telemetry until an adapter is installed. It never silently
 substitutes simulation. Crew and booking details remain in their delivery phases.
+
+---
+
+## 36. An out-and-back is one aeroplane, so the return leg travels with it
+
+**Decided.** Assigning an airframe to a sector offers the return leg alongside it, ticked,
+and carries the same tail onto both legs when it is applied. `includeReturnLeg` on
+`POST /api/flights/:id/aircraft` is the operator's word on it, defaulting to true; the
+release path is the mirror image and takes the return leg off with it when the same tail
+flies both. This is decision 33's reasoning one level down: a route is directional and a
+service is not, and an _aeroplane_ is not either. Re-equipping the outbound alone is how a
+rotation ends up split between two tails, with one aeroplane flying the service out and
+something else expected to bring it home.
+
+**The pair is inferred, not declared.** Nothing in the timetable says two flights are a
+pair, and adding a column that said so would be a fact to maintain and a fact that could be
+wrong. What makes BEG-ABZ and ABZ-BEG one turn is that the second departs the station the
+first arrives at, back where the first started, with a gap an aeroplane could spend on the
+ground -- so `loadReturnLeg` looks for exactly that. Both directions in time, because the
+pairing is symmetric: the outbound's return leg follows it, and a return's own counterpart
+precedes it, which is what makes the offer work from either half. Where a tail flies the
+pair twice in a day the nearer turn wins, and `rotation.returnLegWithinMinutes` is the outer
+bound -- twelve hours, wide enough for a night stop, short enough that tomorrow's service on
+the same pair is a different rotation rather than this one's return leg.
+
+**Both legs are judged, and each leg has the other as a commitment.** The return leg is not
+assumed to inherit the outbound's verdict: it has its own timing, its own turnaround either
+side and its own hangar time to miss. `evaluateRotationAssignment` evaluates each sector and
+merges the two, and the API hands each leg the _other_ as an existing commitment -- neither
+is a commitment of this airframe in any table yet, that being what is under decision, so
+without it the check that matters most here, whether the aeroplane can turn around in time
+to fly its own return, would never run. A finding the two legs word identically, such as a
+check coming due, is said once. A finding that names its sector is said about each: those are
+two statements about two flights, and an operator reading that the outbound is refused should
+not have to assume the return leg was refused too. The picker's rows show one line per
+distinct title, because a row has room for a line and not for a detail.
+
+**Two verdicts per tail, because the operator has two choices.** `GET
+/api/flights/:id/aircraft/candidates` returns `preview` for the sector alone and
+`returnLegPreview` for both legs, and the picker shows whichever matches the tick. A row
+advertising the verdict for a change the operator has just declined would break the promise
+decision 34 makes -- that what the row says and what the review says cannot disagree.
+`returnLegPreview` is null where the offer carries nothing: no return leg, or a tail that
+already flies it.
+
+**Taking the return leg off another airframe is acknowledged, not discovered.**
+`AIRCRAFT_RETURN_LEG_DISPLACED` is a warning naming the tail that comes off, so a second
+aeroplane's day changing is a tick rather than a surprise. It is a warning and not a block
+because it is an ordinary thing to want. No alert is raised: the return leg _gains_ an
+airframe, and the tail that came off it simply has a free slot. The picker leaves the offer
+ticked in that case rather than guessing, since the warning already forces the decision into
+the open.
+
+**The tail already on the sector is still reviewable.** "Already operates this flight" used
+to be a flat conflict. It is now only a conflict when there is nothing left to do -- with the
+return leg short of the same airframe, assigning it again is a real change, and refusing it
+would leave the operator's most likely correction unreachable. Only the legs that actually
+change are written and audited.
+
+**What is not built.** The offer reaches one return leg, not a whole day's rotation: a tail
+flying four sectors out and four back is re-equipped one turn at a time. Chaining the lot
+would need a rotation the operator could see and confirm as a unit, which is a screen rather
+than a checkbox, and every leg of it is a sector the rules must judge separately anyway.
+Crew stay where they are: an airframe swap that should move a rated crew with it is Phase 5's
+question, and answering half of it here would be worse than leaving it whole.
