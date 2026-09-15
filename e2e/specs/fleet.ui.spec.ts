@@ -78,14 +78,19 @@ test.describe("Fleet", () => {
     await page.getByRole("option", { name: "Airborne" }).click();
     await settled(page);
 
-    const rows = page.getByRole("row");
-    const count = await rows.count();
-
-    // Nothing is airborne at every hour of the day, so this asserts the
-    // property only when there is something to assert it about.
-    if (count > 1) {
-      await expect(page.getByText("in flight").first()).toBeVisible();
-    }
+    // Nothing is airborne at every hour of the day, and when nothing is, the
+    // table shows a "No airframes match these filters" row. That is a row, so
+    // counting them cannot tell an empty result from a full one -- and asking
+    // the notice to read "in flight" is how this test failed on a night when
+    // nothing was flying. Asserted as the property instead: no airframe listed
+    // under this filter claims an airport. An empty list satisfies that, and
+    // because the assertion retries it also outlasts the stale rows `settled`
+    // can return against, until the list on screen is the airborne one.
+    const airframes = page
+      .getByRole("row")
+      .filter({ hasNot: page.getByRole("columnheader") })
+      .filter({ hasNotText: "No airframes match these filters" });
+    await expect(airframes.filter({ hasNotText: "in flight" })).toHaveCount(0);
   });
 
   test("withdrawing an airframe names the stranded flights and blocks until acknowledged", async ({
