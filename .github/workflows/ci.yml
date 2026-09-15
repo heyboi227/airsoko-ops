@@ -93,9 +93,14 @@ jobs:
       # and every other spec drives the dev server from `src/`.
       - run: npm run build --workspace @airsoko/api
       - run: npm run test:e2e
+      # The html reporter writes `playwright-report/` next to the nearest
+      # package.json above its config, which here is `e2e/package.json` -- the
+      # same place `test-results/` goes, as the paths in the failure output
+      # show. Uploading it from the repository root found nothing, so every
+      # failed run went without its trace and screenshot.
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
-          path: playwright-report/
+          path: e2e/playwright-report/
           retention-days: 7
