@@ -1,0 +1,17 @@
+{
+  "kind": "route",
+  "label": "BEG-MEX",
+  "row": {
+    "id": "fbcd8b13-ff4b-5f65-9924-5fe91f714b95",
+    "originAirportId": "8250e076-46e8-55cf-9487-d95fd660a7fd",
+    "destinationAirportId": "33d4b1d9-25f9-5674-8b9f-1508ed7914f5",
+    "distanceNm": 5726,
+    "blockMinutes": 760,
+    "status": "planned",
+    "typicalAircraftTypeId": "f974d429-0702-52f5-bdb5-3f6b0d5c4304",
+    "seasonStart": null,
+    "seasonEnd": null,
+    "createdAt": "2026-09-09T21:58:23.266Z",
+    "updatedAt": "2026-09-09T21:58:23.266Z"
+  }
+}
