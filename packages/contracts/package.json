@@ -13,6 +13,6 @@
     "typecheck": "tsc --noEmit --project ."
   },
   "dependencies": {
-    "zod": "^4.6.4"
+    "zod": "^4.6.5"
   }
 }
