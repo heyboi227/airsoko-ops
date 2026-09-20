@@ -26,6 +26,7 @@ export const RULE_CODES = [
   "AIRCRAFT_CAPACITY_BELOW_SOLD",
   "AIRCRAFT_CABIN_CAPACITY_BELOW_SOLD",
   "AIRCRAFT_TYPE_MISMATCH_WITH_SCHEDULE",
+  "AIRCRAFT_RETURN_LEG_DISPLACED",
 
   // --- Aircraft records ----------------------------------------------------
   // Distinct codes rather than one AIRCRAFT_INVALID, because the operator

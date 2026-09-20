@@ -61,6 +61,21 @@ export interface RangePolicy {
   warnWithinFraction: number;
 }
 
+/**
+ * What still reads as one rotation.
+ *
+ * An out-and-back is two sectors and one aeroplane: BEG-ABZ turns around and
+ * comes home as ABZ-BEG. The pairing is not a column -- nothing in the
+ * timetable declares two flights a pair -- so it is inferred from the ground
+ * gap at the turn station, and this is the longest gap that still counts. Wide
+ * enough for a night stop, short enough that tomorrow's service on the same
+ * pair is a different rotation rather than this one's return leg.
+ */
+export interface RotationPolicy {
+  /** Longest ground gap at the turn station that still reads as one rotation. */
+  returnLegWithinMinutes: number;
+}
+
 export interface DelayPolicy {
   /** Minutes late before a flight is reported as delayed. */
   thresholdMinutes: number;
@@ -98,6 +113,7 @@ export interface OperationalPolicy {
   complement: ComplementPolicy;
   maintenance: MaintenancePolicy;
   range: RangePolicy;
+  rotation: RotationPolicy;
   delay: DelayPolicy;
   curfew: CurfewPolicy;
   inventory: InventoryPolicy;
@@ -135,6 +151,9 @@ export const DEFAULT_POLICY: OperationalPolicy = {
     usableFraction: 0.9,
     warnWithinFraction: 0.95,
   },
+  rotation: {
+    returnLegWithinMinutes: 12 * 60,
+  },
   delay: {
     thresholdMinutes: 15,
     significantMinutes: 60,
@@ -164,6 +183,7 @@ export function withPolicyOverrides(
     complement: { ...DEFAULT_POLICY.complement, ...overrides.complement },
     maintenance: { ...DEFAULT_POLICY.maintenance, ...overrides.maintenance },
     range: { ...DEFAULT_POLICY.range, ...overrides.range },
+    rotation: { ...DEFAULT_POLICY.rotation, ...overrides.rotation },
     delay: { ...DEFAULT_POLICY.delay, ...overrides.delay },
     curfew: { ...DEFAULT_POLICY.curfew, ...overrides.curfew },
     inventory: { ...DEFAULT_POLICY.inventory, ...overrides.inventory },

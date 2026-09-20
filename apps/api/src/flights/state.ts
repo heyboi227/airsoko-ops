@@ -26,6 +26,7 @@ import {
   formatLocalTime,
   hasDeparted,
   isDelayed,
+  minutesBetween,
   partsInZone,
   resolveAmenities,
   type ExistingCommitment,
@@ -42,6 +43,7 @@ import {
   type FlightSummary,
   type FlightTimelineEvent,
   type Instant,
+  type OverridableField,
 } from "@airsoko/contracts";
 import { db, type Executor } from "../db/client.ts";
 import {
@@ -863,6 +865,115 @@ export async function loadNextSector(
 }
 
 /**
+ * The return leg: the sector this flight turns around and comes home on.
+ *
+ * Nothing in the timetable declares two flights a pair. What makes BEG-ABZ and
+ * ABZ-BEG one out-and-back is that the second departs the station the first
+ * arrives at, back to where the first started, with a gap an aeroplane could
+ * spend on the ground -- so that is what this looks for, rather than a column
+ * that would have to be maintained and could be wrong.
+ *
+ * Both directions in time, because the pairing is symmetric: the outbound's
+ * return leg follows it, and the return's own counterpart precedes it. Where a
+ * tail flies the pair more than once in a day, the nearer turn wins -- the two
+ * sectors either side of one stop at the station are the rotation, and a
+ * sector nine hours away is a different one. `returnLegWithinMinutes` is the
+ * outer bound, wide enough for a night stop.
+ *
+ * Cancelled sectors are not offered: an aeroplane is not needed for a flight
+ * that is not operating.
+ */
+export interface ReturnLegFacts {
+  id: string;
+  flightNumber: string;
+  serviceDate: string;
+  status: FlightStatus;
+  scheduledDeparture: string;
+  estimatedDeparture: string | null;
+  actualDeparture: string | null;
+  scheduledArrival: string;
+  estimatedArrival: string | null;
+  actualArrival: string | null;
+  aircraftId: string | null;
+  aircraftRegistration: string | null;
+  scheduleId: string | null;
+  routeId: string;
+  originIata: string;
+  destinationIata: string;
+  overriddenFields: OverridableField[];
+  /** Ground time at the turn station between the two sectors. */
+  groundMinutes: number;
+  /** True when the return leg follows this flight; false when it precedes it. */
+  follows: boolean;
+}
+
+export async function loadReturnLeg(
+  flight: {
+    id: string;
+    serviceDate: string;
+    scheduledDeparture: string;
+    scheduledArrival: string;
+    originAirportId: string;
+    destinationAirportId: string;
+  },
+  executor: Executor = db,
+): Promise<ReturnLegFacts | null> {
+  const rows = await executor
+    .select({
+      id: flightInstances.id,
+      flightNumber: flightInstances.flightNumber,
+      serviceDate: flightInstances.serviceDate,
+      status: flightInstances.status,
+      scheduledDeparture: flightInstances.scheduledDeparture,
+      estimatedDeparture: flightInstances.estimatedDeparture,
+      actualDeparture: flightInstances.actualDeparture,
+      scheduledArrival: flightInstances.scheduledArrival,
+      estimatedArrival: flightInstances.estimatedArrival,
+      actualArrival: flightInstances.actualArrival,
+      aircraftId: flightInstances.aircraftId,
+      aircraftRegistration: aircraft.registration,
+      scheduleId: flightInstances.scheduleId,
+      routeId: flightInstances.routeId,
+      originIata: origin.iataCode,
+      destinationIata: destination.iataCode,
+      overriddenFields: flightInstances.overriddenFields,
+    })
+    .from(flightInstances)
+    .innerJoin(origin, eq(origin.id, flightInstances.originAirportId))
+    .innerJoin(destination, eq(destination.id, flightInstances.destinationAirportId))
+    .leftJoin(aircraft, eq(aircraft.id, flightInstances.aircraftId))
+    .where(
+      and(
+        ne(flightInstances.id, flight.id),
+        eq(flightInstances.originAirportId, flight.destinationAirportId),
+        eq(flightInstances.destinationAirportId, flight.originAirportId),
+        ne(flightInstances.status, "cancelled"),
+        gte(flightInstances.serviceDate, shiftDate(flight.serviceDate, -1)),
+        lte(flightInstances.serviceDate, shiftDate(flight.serviceDate, 1)),
+      ),
+    );
+
+  const window = DEFAULT_POLICY.rotation.returnLegWithinMinutes;
+  let nearest: ReturnLegFacts | null = null;
+
+  for (const row of rows) {
+    // Following: this flight lands, the return leg leaves. Preceding: the
+    // other sector lands and this one is the leg that takes it home.
+    const follows = minutesBetween(flight.scheduledArrival, row.scheduledDeparture) >= 0;
+    const groundMinutes = follows
+      ? minutesBetween(flight.scheduledArrival, row.scheduledDeparture)
+      : minutesBetween(row.scheduledArrival, flight.scheduledDeparture);
+
+    if (groundMinutes < 0 || groundMinutes > window) continue;
+    if (nearest && nearest.groundMinutes <= groundMinutes) continue;
+
+    nearest = { ...row, groundMinutes, follows };
+  }
+
+  return nearest;
+}
+
+/**
  * Sectors each airframe is committed to, excluding the one being assigned.
  *
  * Keyed by airframe and loaded for many at once. The assignment picker ranks
@@ -874,7 +985,8 @@ export async function loadCommitmentsByAircraft(
   aircraftIds: readonly string[],
   windowStart: string,
   windowEnd: string,
-  excludeFlightId: string,
+  /** The sectors being decided about: they are the question, not a commitment. */
+  excludeFlightIds: readonly string[],
   executor: Executor = db,
 ): Promise<Map<string, ExistingCommitment[]>> {
   const byAircraft = new Map<string, ExistingCommitment[]>();
@@ -896,7 +1008,7 @@ export async function loadCommitmentsByAircraft(
     .where(
       and(
         inArray(flightInstances.aircraftId, [...aircraftIds]),
-        ne(flightInstances.id, excludeFlightId),
+        notInArray(flightInstances.id, [...excludeFlightIds]),
         ne(flightInstances.status, "cancelled"),
         gte(flightInstances.serviceDate, windowStart),
         lte(flightInstances.serviceDate, windowEnd),

@@ -4,11 +4,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   Skeleton,
   Stack,
   Table,
@@ -57,6 +59,12 @@ import { MutationConfirmDialog } from "../MutationConfirmDialog.tsx";
  * the fleet look smaller than it is and leave an operator wondering where a
  * tail went; showing them greyed, with the reason, answers the question the
  * moment it is asked. The rules refuse them either way.
+ *
+ * The return leg travels with the choice. An out-and-back is two sectors and
+ * one aeroplane, so the airframe is carried onto the sector this flight turns
+ * around on unless the operator says otherwise -- and because that is a choice,
+ * every row carries both verdicts and shows the one matching it. A row cannot
+ * advertise a verdict for a change the operator has just declined.
  */
 
 interface CandidateRow {
@@ -75,12 +83,31 @@ interface CandidateRow {
   maintenance: { urgency: string; summary: string };
   /** The rules' own verdict on this tail flying this sector, as of `generatedAt`. */
   preview: MutationPreview;
+  /**
+   * The same verdict for both legs of the turn. Null when there is no return
+   * leg to carry, or when this tail already flies it.
+   */
+  returnLegPreview: MutationPreview | null;
+}
+
+/** The sector this flight turns around on, when the timetable has one. */
+interface ReturnLeg {
+  id: string;
+  flightNumber: string;
+  originIata: string;
+  destinationIata: string;
+  serviceDate: string;
+  scheduledDeparture: string;
+  groundMinutes: number;
+  follows: boolean;
+  aircraft: { id: string; registration: string } | null;
 }
 
 interface CandidatesResponse {
   items: CandidateRow[];
   total: number;
   generatedAt: string;
+  returnLeg: ReturnLeg | null;
 }
 
 type Verdict = "clear" | "warnings" | "blocked";
@@ -112,7 +139,15 @@ function VerdictCell({ assessment }: { assessment: Assessment }) {
   const { verdict, blocking, warnings } = assessment;
   // Conflicts first: they are why the tail is off the table, and the warnings
   // would only matter once they were gone.
-  const named = [...blocking, ...warnings];
+  //
+  // One line per distinct title. A refusal about the aeroplane itself -- out of
+  // service, out of range -- is raised against each leg of a turn and names the
+  // leg in its detail, which the row has no room for: two rows reading "YU-APE
+  // is stored" would say nothing the first did not. The detail of each is still
+  // in the confirmation, where there is room to tell them apart.
+  const named = [...blocking, ...warnings].filter(
+    (finding, index, all) => all.findIndex((other) => other.title === finding.title) === index,
+  );
 
   return (
     <Stack spacing={0.5} sx={{ alignItems: "flex-start" }}>
@@ -173,6 +208,9 @@ export function AircraftAssignmentDialog({
 }) {
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<CandidateRow | null>(null);
+  // On by default, as the server offers it: the whole turn moves together
+  // unless somebody deliberately splits it.
+  const [includeReturnLeg, setIncludeReturnLeg] = useState(true);
 
   const candidates = useQuery({
     queryKey: ["flight", flight.id, "aircraft-candidates"],
@@ -183,7 +221,10 @@ export function AircraftAssignmentDialog({
     staleTime: 0,
   });
 
-  const flow = useMutationFlow<{ aircraftId: string | null }, unknown>({
+  const flow = useMutationFlow<
+    { aircraftId: string | null; includeReturnLeg: boolean },
+    unknown
+  >({
     path: () => `/api/flights/${flight.id}/aircraft`,
     method: "POST",
     onApplied: () => {
@@ -192,13 +233,19 @@ export function AircraftAssignmentDialog({
     },
   });
 
+  const returnLeg = candidates.data?.returnLeg ?? null;
+  const carrying = includeReturnLeg && returnLeg !== null;
+
   const assessed = useMemo<AssessedRow[]>(
     () =>
       (candidates.data?.items ?? []).map((item) => ({
         item,
-        assessment: assess(item.preview),
+        // The verdict for the change actually on offer. A tail already flying
+        // the return leg has no second verdict, because carrying it there
+        // changes nothing about its day.
+        assessment: assess((carrying && item.returnLegPreview) || item.preview),
       })),
-    [candidates.data],
+    [candidates.data, carrying],
   );
 
   const tally = useMemo(() => {
@@ -268,11 +315,42 @@ export function AircraftAssignmentDialog({
             ) : null}
             <Box sx={{ flex: 1 }} />
             {flight.aircraft ? (
-              <Button color="warning" onClick={() => flow.review({ aircraftId: null })}>
+              <Button
+                color="warning"
+                onClick={() => flow.review({ aircraftId: null, includeReturnLeg })}
+              >
                 Release {flight.aircraft.registration}
               </Button>
             ) : null}
           </Stack>
+
+          {returnLeg ? (
+            <FormControlLabel
+              sx={{ mb: 1, alignItems: "flex-start" }}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={includeReturnLeg}
+                  onChange={(event) => setIncludeReturnLeg(event.target.checked)}
+                />
+              }
+              label={
+                <Stack spacing={0.25} sx={{ pt: 0.5 }}>
+                  <Typography variant="body2">
+                    Carry the airframe onto {returnLeg.flightNumber} {returnLeg.originIata}→
+                    {returnLeg.destinationIata}
+                    {returnLeg.aircraft ? `, replacing ${returnLeg.aircraft.registration}` : ""}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    {returnLeg.follows
+                      ? `The sector this flight turns around on, ${returnLeg.groundMinutes} minutes after it lands.`
+                      : `The sector this flight comes home from, landing ${returnLeg.groundMinutes} minutes before it departs.`}{" "}
+                    The verdicts below cover both legs while this is ticked.
+                  </Typography>
+                </Stack>
+              }
+            />
+          ) : null}
 
           {candidates.isError ? (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -312,6 +390,9 @@ export function AircraftAssignmentDialog({
 
                 {rows.map(({ item, assessment }) => {
                   const current = item.id === flight.aircraft?.id;
+                  // The tail already on this sector is still worth reviewing
+                  // when the return leg is short of it: that is a change.
+                  const nothingToDo = current && !(carrying && item.returnLegPreview);
                   const usable = item.serviceability === "in_service";
                   const refused = assessment.verdict === "blocked";
                   return (
@@ -388,10 +469,10 @@ export function AircraftAssignmentDialog({
                       <TableCell align="right">
                         <Button
                           size="small"
-                          disabled={current}
+                          disabled={nothingToDo}
                           onClick={() => {
                             setChosen(item);
-                            flow.review({ aircraftId: item.id });
+                            flow.review({ aircraftId: item.id, includeReturnLeg });
                           }}
                         >
                           Review
@@ -406,7 +487,8 @@ export function AircraftAssignmentDialog({
 
           <Alert severity="info" variant="outlined" sx={{ mt: 2 }}>
             Every airframe has been checked against this sector as the operation stands —
-            availability, overlapping sectors, turnaround, repositioning, range and capacity.
+            availability, overlapping sectors, turnaround, repositioning, range and capacity
+            {carrying ? ` — and against ${returnLeg.flightNumber} on the same terms` : ""}.
             Review runs the same checks again at the moment of assignment, and nothing is
             written until the result is confirmed.
           </Alert>
@@ -428,15 +510,24 @@ export function AircraftAssignmentDialog({
             flow.payload.aircraftId === null ? (
               <Box component="span">
                 {flight.aircraft?.registration} comes off {flight.flightNumber}{" "}
-                {flight.origin.iataCode}–{flight.destination.iataCode}. The sector cannot
-                operate until another airframe is assigned.
+                {flight.origin.iataCode}–{flight.destination.iataCode}
+                {carrying && returnLeg?.aircraft?.id === flight.aircraft?.id
+                  ? ` and off ${returnLeg?.flightNumber} ${returnLeg?.originIata}–${returnLeg?.destinationIata} with it`
+                  : ""}
+                . The sector cannot operate until another airframe is assigned.
               </Box>
             ) : (
               <Box component="span">
                 {chosen?.registration} ({chosen?.type.icaoTypeCode}, {chosen?.seatCapacity}{" "}
                 seats) operates {flight.flightNumber} {flight.origin.iataCode}–
                 {flight.destination.iataCode} on {flight.serviceDate}
-                {flight.aircraft ? `, replacing ${flight.aircraft.registration}` : ""}.
+                {flight.aircraft ? `, replacing ${flight.aircraft.registration}` : ""}
+                {carrying && chosen?.returnLegPreview && returnLeg
+                  ? `, and comes back on ${returnLeg.flightNumber} ${returnLeg.originIata}–${returnLeg.destinationIata}${
+                      returnLeg.aircraft ? `, replacing ${returnLeg.aircraft.registration}` : ""
+                    }`
+                  : ""}
+                .
               </Box>
             )
           }

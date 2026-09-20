@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_POLICY } from "../policy.ts";
 import {
   evaluateAircraftAssignment,
+  evaluateRotationAssignment,
   evaluateWithdrawAircraft,
   type AssignAircraftContext,
   type CandidateAircraft,
@@ -475,5 +476,167 @@ describe("only the adjacent sectors decide where the aircraft is", () => {
     expect(evaluation.findings.map((finding) => finding.code)).toContain(
       "AIRCRAFT_OVERLAPPING_ASSIGNMENT",
     );
+  });
+});
+
+// --- Both legs of the turn -------------------------------------------------
+
+describe("carrying the airframe onto the return leg", () => {
+  /** VIE-BEG, an hour on the ground after SO200 lands. */
+  function returning(overrides: Partial<SectorToFly> = {}): SectorToFly {
+    return sector({
+      flightId: "33333333-3333-5333-8333-333333333333",
+      flightNumber: "SO201",
+      originIata: "VIE",
+      destinationIata: "BEG",
+      origin: VIE,
+      destination: BEG,
+      scheduledDeparture: "2026-08-30T10:05:00.000Z",
+      scheduledArrival: "2026-08-30T11:10:00.000Z",
+      ...overrides,
+    });
+  }
+
+  /** What the API hands the rule: each leg carries the other as a commitment. */
+  function turn(
+    outboundSector = sector(),
+    returnSector = returning(),
+    displacing: { id: string; registration: string } | null = null,
+  ) {
+    const asCommitment = (leg: SectorToFly) => ({
+      flightId: leg.flightId,
+      flightNumber: leg.flightNumber,
+      originIata: leg.originIata,
+      destinationIata: leg.destinationIata,
+      departure: leg.scheduledDeparture,
+      arrival: leg.scheduledArrival,
+    });
+
+    return {
+      outbound: {
+        sector: outboundSector,
+        context: context({ commitments: [asCommitment(returnSector)] }),
+      },
+      returnLeg: {
+        sector: returnSector,
+        context: context({ commitments: [asCommitment(outboundSector)] }),
+        displacing,
+      },
+    };
+  }
+
+  it("is the single sector's evaluation when there is no return leg", () => {
+    const alone = evaluateAircraftAssignment(narrowBody(), sector(), context());
+    const rotation = evaluateRotationAssignment(
+      narrowBody(),
+      { sector: sector(), context: context() },
+      null,
+    );
+    expect(rotation).toEqual(alone);
+  });
+
+  it("accepts an out-and-back with a workable turnaround", () => {
+    const { outbound, returnLeg } = turn();
+    const result = evaluateRotationAssignment(narrowBody(), outbound, returnLeg);
+
+    expect(result.findings).toHaveLength(0);
+    // Both sectors are named, so the operator sees the whole change.
+    const assigned = result.consequences
+      .filter((item) => item.kind === "aircraft_assigned")
+      .map((item) => item.summary);
+    expect(assigned.some((summary) => summary.includes("SO200"))).toBe(true);
+    expect(assigned.some((summary) => summary.includes("SO201"))).toBe(true);
+  });
+
+  it("refuses the turn when the aeroplane cannot make it round", () => {
+    // Twenty minutes on the ground at VIE against a 35-minute minimum. The
+    // outbound on its own is clear; only the pair shows the conflict.
+    const tight = returning({
+      scheduledDeparture: "2026-08-30T09:25:00.000Z",
+      scheduledArrival: "2026-08-30T10:30:00.000Z",
+    });
+    const { outbound, returnLeg } = turn(sector(), tight);
+
+    expect(evaluateAircraftAssignment(narrowBody(), sector(), context()).findings).toHaveLength(
+      0,
+    );
+
+    const result = evaluateRotationAssignment(narrowBody(), outbound, returnLeg);
+    expect(isBlocking(result.findings)).toBe(true);
+    expect(codes(result)).toContain("AIRCRAFT_INSUFFICIENT_TURNAROUND");
+  });
+
+  it("says a fact worded the same for both sectors once", () => {
+    // A check coming due is a fact about the aeroplane. Both legs would word
+    // it identically, so it is said once rather than twice over.
+    const dueSoon = narrowBody({
+      maintenance: {
+        nextCheckType: "a_check",
+        nextCheckDueAt: "2026-09-05T00:00:00.000Z",
+        nextCheckDueHours: null,
+        nextCheckDueCycles: null,
+        totalHours: 30_000,
+        totalCycles: 12_000,
+      },
+    });
+    const { outbound, returnLeg } = turn();
+    const result = evaluateRotationAssignment(dueSoon, outbound, returnLeg);
+
+    expect(codes(result).filter((code) => code === "MAINTENANCE_LIMIT_APPROACHING")).toEqual([
+      "MAINTENANCE_LIMIT_APPROACHING",
+    ]);
+  });
+
+  it("refuses each sector by name when the airframe cannot fly either", () => {
+    const { outbound, returnLeg } = turn();
+    const result = evaluateRotationAssignment(
+      narrowBody({ serviceability: "stored" }),
+      outbound,
+      returnLeg,
+    );
+
+    // Two statements about two flights. An operator reading that the outbound
+    // is refused should not have to assume the return leg is refused too.
+    const refusals = result.findings.filter(
+      (finding) => finding.code === "AIRCRAFT_UNAVAILABLE",
+    );
+    expect(refusals).toHaveLength(2);
+    expect(refusals.some((finding) => finding.detail.includes("SO200"))).toBe(true);
+    expect(refusals.some((finding) => finding.detail.includes("SO201"))).toBe(true);
+  });
+
+  it("says a fact about a sector once per sector", () => {
+    // A type mismatch is about the schedule each leg was planned on, so both
+    // legs are entitled to say it -- naming their own flight.
+    const { outbound, returnLeg } = turn(
+      sector({ plannedTypeCode: "AT76" }),
+      returning({ plannedTypeCode: "AT76" }),
+    );
+    const result = evaluateRotationAssignment(narrowBody(), outbound, returnLeg);
+
+    const mismatches = result.findings.filter(
+      (finding) => finding.code === "AIRCRAFT_TYPE_MISMATCH_WITH_SCHEDULE",
+    );
+    expect(mismatches).toHaveLength(2);
+    expect(mismatches.map((finding) => finding.title).sort()).toEqual([
+      "SO200 is planned on a AT76",
+      "SO201 is planned on a AT76",
+    ]);
+  });
+
+  it("makes taking the return leg off another tail an acknowledgement", () => {
+    const { outbound, returnLeg } = turn(sector(), returning(), {
+      id: "44444444-4444-5444-8444-444444444444",
+      registration: "YU-APF",
+    });
+    const result = evaluateRotationAssignment(narrowBody(), outbound, returnLeg);
+
+    const displaced = result.findings.find(
+      (finding) => finding.code === "AIRCRAFT_RETURN_LEG_DISPLACED",
+    );
+    expect(displaced?.severity).toBe("warning");
+    expect(displaced?.detail).toContain("YU-APF");
+    expect(displaced?.detail).toContain("SO201");
+    expect(result.consequences.map((item) => item.kind)).toContain("aircraft_released");
   });
 });

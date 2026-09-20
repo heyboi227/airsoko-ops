@@ -339,6 +339,15 @@ export type DuplicateFlight = z.input<typeof duplicateFlightSchema>;
 export const assignAircraftSchema = z.object({
   /** Null releases the airframe and leaves the sector unassigned. */
   aircraftId: idSchema.nullable(),
+  /**
+   * Carry the change onto the return leg -- the counter-direction sector this
+   * flight turns around on -- so a rotation is not left half re-equipped.
+   *
+   * True by default, as filing a route files its pair (decision 33). It is an
+   * offer rather than a promise: the server skips a leg with nothing to do,
+   * and the rules judge the second sector on its own terms.
+   */
+  includeReturnLeg: z.boolean().default(true),
 });
 export type AssignAircraft = z.infer<typeof assignAircraftSchema>;
 
