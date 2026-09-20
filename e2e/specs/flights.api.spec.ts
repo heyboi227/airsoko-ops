@@ -327,25 +327,42 @@ test.describe("Scenario A: aircraft reassignment", () => {
     const date = await futureDate(request, token);
     const day = await flights(request, token, { from: date, to: date });
 
-    // A sector the timetable pairs: out on one leg, home on the other. Which
-    // flight that is depends on the seed's reference date, so it is found
-    // rather than named.
+    // A sector the timetable pairs -- out on one leg, home on the other --
+    // with an airframe the rules would take for both. Which flight that is
+    // depends on the seed's reference date, so it is found rather than named,
+    // and what is looked for is the whole turn rather than just the pairing.
+    // A pair can be perfectly well formed and still have no spare tail: the
+    // first sector on a board is often a long-haul red-eye, and a fleet where
+    // only two airframes have the range to reach Beijing, both already flying
+    // it, is the seed being realistic rather than anything being wrong. So a
+    // pair without a substitute is passed over rather than failed on.
     let target: FlightRow | null = null;
     let picker: CandidatesBody | null = null;
+    let chosen: CandidateItem | null = null;
     for (const item of day.items.filter((row) => row.status === "scheduled" && row.aircraft)) {
       const response = await request.get(`/api/flights/${item.id}/aircraft/candidates`, {
         headers: auth(token),
       });
       expect(response.status()).toBe(200);
       const body = (await response.json()) as CandidatesBody;
-      if (body.returnLeg) {
-        target = item;
-        picker = body;
-        break;
-      }
+      if (!body.returnLeg) continue;
+
+      // A two-leg verdict that is applicable, which is also what makes the
+      // tail a substitute rather than the one already flying the return leg:
+      // those carry no offer, and so no `returnLegPreview` at all.
+      const spare = body.items.find(
+        (candidate) =>
+          candidate.returnLegPreview?.applicable === true && candidate.id !== item.aircraft?.id,
+      );
+      if (!spare) continue;
+
+      target = item;
+      picker = body;
+      chosen = spare;
+      break;
     }
-    if (!target || !picker?.returnLeg) {
-      throw new Error("No flight with a return leg on the chosen date.");
+    if (!target || !picker?.returnLeg || !chosen) {
+      throw new Error("No pair on the chosen date with an airframe free for the whole turn.");
     }
     const leg = picker.returnLeg;
 
@@ -353,12 +370,6 @@ test.describe("Scenario A: aircraft reassignment", () => {
     expect(leg.originIata).toBe(target.destination.iataCode);
     expect(leg.destinationIata).toBe(target.origin.iataCode);
     expect(leg.groundMinutes).toBeGreaterThanOrEqual(0);
-
-    const chosen = picker.items.find(
-      (item) => offered(item).applicable && item.id !== target.aircraft?.id,
-    );
-    if (!chosen) throw new Error("No airframe the rules would accept for the whole turn.");
-    expect(chosen.returnLegPreview).not.toBeNull();
 
     const review = async (includeReturnLeg: boolean) => {
       const response = await request.post(`/api/flights/${target.id}/aircraft`, {
