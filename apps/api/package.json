@@ -34,7 +34,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.2",
     "@types/pg": "^8.23.1",
-    "csv-parse": "^7.0.2",
+    "csv-parse": "^7.0.3",
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
     "pino-pretty": "^13.1.3",
