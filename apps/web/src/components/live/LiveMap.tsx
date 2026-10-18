@@ -182,14 +182,20 @@ export function LiveMap({
         map.addLayer({ id: "tiles", type: "raster", source: "tiles" });
       }
       map.addSource("routes", { type: "geojson", data: EMPTY_ROUTES });
+      // Unselected routes are drawn at about 3.5:1 against the land and 4:1
+      // against the water, past the 3:1 a graphic needs to be made out (WCAG
+      // 1.4.11). At 1 px and 50% they were 1.8:1, scarcely brighter than the
+      // coastline. The selected route sorts on top, because other flights
+      // between the same two airports share its arc.
       map.addLayer({
         id: "routes",
         type: "line",
         source: "routes",
+        layout: { "line-sort-key": ["case", ["get", "selected"], 1, 0] },
         paint: {
-          "line-color": ["case", ["get", "selected"], "#7fd2ff", "#607e92"],
-          "line-width": ["case", ["get", "selected"], 2.5, 1],
-          "line-opacity": ["case", ["get", "selected"], 1, 0.5],
+          "line-color": ["case", ["get", "selected"], "#7fd2ff", "#8faab9"],
+          "line-width": ["case", ["get", "selected"], 2.5, 1.25],
+          "line-opacity": ["case", ["get", "selected"], 1, 0.7],
         },
       });
       // Station dots are drawn by the GL renderer, in the same layer stack and
