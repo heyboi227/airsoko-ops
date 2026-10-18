@@ -17,13 +17,11 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
-import DarkModeIcon from "@mui/icons-material/DarkMode";
-import LightModeIcon from "@mui/icons-material/LightMode";
 import { ROLE_LABELS } from "@airsoko/contracts";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { NAV_ITEMS } from "./navigation.ts";
 import { OperationalClock } from "./OperationalClock.tsx";
+import { DarkModeIcon, LightModeIcon, MenuIcon } from "../components/icons.tsx";
 
 const EXPANDED = 232;
 const COLLAPSED = 60;

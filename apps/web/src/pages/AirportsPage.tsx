@@ -26,8 +26,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import EditIcon from "@mui/icons-material/Edit";
-import BlockIcon from "@mui/icons-material/Block";
 import type {
   Airport,
   AirportQuery,
@@ -46,6 +44,7 @@ import {
   toCreatePayload,
   type AirportFormValues,
 } from "../components/AirportFormDialog.tsx";
+import { BlockIcon, EditIcon } from "../components/icons.tsx";
 
 /**
  * Airports: the one fully working section in Phase 0.

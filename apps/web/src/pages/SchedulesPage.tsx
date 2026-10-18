@@ -22,13 +22,12 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import CloseIcon from "@mui/icons-material/Close";
 import { formatOperatingDays, type RecurringSchedule } from "@airsoko/contracts";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { ScheduleFormDialog } from "../components/flight/ScheduleFormDialog.tsx";
 import { ScheduleDrawer } from "../components/flight/ScheduleDrawer.tsx";
+import { AddIcon, CloseIcon } from "../components/icons.tsx";
 
 /**
  * The repeating services.

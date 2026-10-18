@@ -20,8 +20,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import type { FlightDetail } from "@airsoko/contracts";
 import { formatOperatingDays } from "@airsoko/contracts";
 import { FLIGHT_STATUS_LABELS } from "@airsoko/domain";
@@ -39,6 +37,7 @@ import {
   RescheduleDialog,
   StatusDialog,
 } from "../components/flight/FlightActionDialogs.tsx";
+import { CheckCircleIcon, RadioButtonUncheckedIcon } from "../components/icons.tsx";
 
 /**
  * The flight-control page.
