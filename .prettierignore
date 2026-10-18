@@ -7,3 +7,6 @@ test-results/
 apps/api/drizzle/
 apps/api/src/db/seed/recorded/
 package-lock.json
+# Natural Earth data, kept byte for byte as published so it can be checked against its
+# source (see apps/web/public/map/README.md).
+apps/web/public/map/land.geojson
