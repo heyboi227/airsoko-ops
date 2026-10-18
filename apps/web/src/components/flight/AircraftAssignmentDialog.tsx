@@ -23,9 +23,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import BlockIcon from "@mui/icons-material/Block";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import {
   OPERATIONAL_STATE_LABELS,
   SERVICEABILITY_LABELS,
@@ -38,6 +35,7 @@ import {
 import { ApiRequestError, apiRequest } from "../../api/client.ts";
 import { useMutationFlow } from "../../api/useMutationFlow.ts";
 import { MutationConfirmDialog } from "../MutationConfirmDialog.tsx";
+import { BlockIcon, CheckCircleIcon, WarningAmberIcon } from "../icons.tsx";
 
 /**
  * Scenario A, as an operator performs it.

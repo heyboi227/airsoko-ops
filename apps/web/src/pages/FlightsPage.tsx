@@ -24,10 +24,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import TodayIcon from "@mui/icons-material/Today";
 import { FLIGHT_STATUSES, type FlightStatus, type FlightSummary } from "@airsoko/contracts";
 import { FLIGHT_STATUS_LABELS } from "@airsoko/domain";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
@@ -40,6 +36,7 @@ import {
 } from "../components/flight/FlightChips.tsx";
 import { DayTimeline } from "../components/flight/DayTimeline.tsx";
 import { FlightFormDialog } from "../components/flight/FlightFormDialog.tsx";
+import { AddIcon, ChevronLeftIcon, ChevronRightIcon, TodayIcon } from "../components/icons.tsx";
 
 /**
  * The operating day.
