@@ -929,3 +929,28 @@ would need a rotation the operator could see and confirm as a unit, which is a s
 than a checkbox, and every leg of it is a sector the rules must judge separately anyway.
 Crew stay where they are: an airframe swap that should move a rated crew with it is Phase 5's
 question, and answering half of it here would be worse than leaving it whole.
+
+---
+
+## 37. The web app draws its own sixteen icons
+
+**Decided.** The Material icons the web app uses are drawn in
+`apps/web/src/components/icons.tsx` with MUI's `createSvgIcon`, and `@mui/icons-material` is
+no longer a dependency.
+
+That package ships every Material icon in all five styles: 43,010 files, 62% of
+`node_modules`, to supply sixteen. On Linux the whole install took eight seconds, so the cost
+never showed. On a Windows machine with real-time antivirus scanning every file is scanned as
+`npm ci` writes it, and a clean install there took twenty minutes -- most of what it had to
+write was this one package.
+
+**Same names, same markup.** Each icon keeps the name the package gives it, so it renders the
+same `<svg>` with the same `data-testid` (`AddIcon`, `CloseIcon` and so on), and nothing that
+selects on them can tell the difference. The path data is copied unchanged from
+`@mui/icons-material` 9.5.0, which redistributes Google's Material Icons under the Apache
+License 2.0.
+
+**Adding an icon is a copy, not an install.** Take the `d` attribute from the icon's module in
+`@mui/icons-material` -- unpkg serves it without installing anything -- and give it its own
+`createSvgIcon` call under the same name. Installing the package again for a seventeenth icon
+would bring all 43,010 files back.

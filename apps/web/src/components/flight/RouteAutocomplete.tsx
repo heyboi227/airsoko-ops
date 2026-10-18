@@ -9,11 +9,11 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
 import type { Route } from "@airsoko/contracts";
 import { apiRequest } from "../../api/client.ts";
 import { useAuth } from "../../auth/AuthContext.tsx";
 import { RouteFormDialog } from "./RouteFormDialog.tsx";
+import { AddIcon } from "../icons.tsx";
 
 /**
  * The airport pair a flight or a pattern operates.

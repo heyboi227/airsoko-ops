@@ -17,8 +17,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import DeleteIcon from "@mui/icons-material/Delete";
 import {
   CABIN_CLASSES,
   type CabinClass,
@@ -27,6 +25,7 @@ import {
   type TypeConfigurations,
 } from "@airsoko/contracts";
 import { ApiRequestError, apiRequest } from "../api/client.ts";
+import { AddIcon, DeleteIcon } from "./icons.tsx";
 
 /**
  * Registering a physical airframe.

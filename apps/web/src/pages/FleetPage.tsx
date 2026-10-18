@@ -22,7 +22,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
 import {
   OPERATIONAL_STATE_LABELS,
   SERVICEABILITY_LABELS,
@@ -39,6 +38,7 @@ import {
   type AircraftDraftPayload,
 } from "../components/AircraftFormDialog.tsx";
 import { MutationConfirmDialog } from "../components/MutationConfirmDialog.tsx";
+import { AddIcon } from "../components/icons.tsx";
 
 /**
  * The fleet, as it stands right now.

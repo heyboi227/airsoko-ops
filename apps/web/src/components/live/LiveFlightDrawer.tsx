@@ -9,12 +9,12 @@ import {
   Typography,
   Alert,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
 import { Link as RouterLink } from "react-router-dom";
 import type { LiveFlight } from "@airsoko/contracts";
 import { useAuth } from "../../auth/AuthContext.tsx";
 import { grouped } from "../../format.ts";
 import { DelayChip, FlightStatusChip } from "../flight/FlightChips.tsx";
+import { CloseIcon } from "../icons.tsx";
 
 function utc(value: string | null) {
   return value ? `${value.slice(5, 10)} ${value.slice(11, 16)}` : "—";

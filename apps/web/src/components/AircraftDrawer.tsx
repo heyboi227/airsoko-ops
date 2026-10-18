@@ -21,8 +21,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
-import BlockIcon from "@mui/icons-material/Block";
 import {
   OPERATIONAL_STATE_LABELS,
   SERVICEABILITY_LABELS,
@@ -36,6 +34,7 @@ import { ApiRequestError, apiRequest } from "../api/client.ts";
 import { grouped } from "../format.ts";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { MutationConfirmDialog } from "./MutationConfirmDialog.tsx";
+import { BlockIcon, CloseIcon } from "./icons.tsx";
 
 /**
  * One airframe, in full.

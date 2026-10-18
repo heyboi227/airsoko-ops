@@ -19,10 +19,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import CheckIcon from "@mui/icons-material/Check";
-import BlockIcon from "@mui/icons-material/Block";
-import RemoveIcon from "@mui/icons-material/Remove";
 import {
   CABIN_CLASSES,
   type AmenityScope,
@@ -35,6 +31,7 @@ import { ApiRequestError, apiRequest } from "../api/client.ts";
 import { useAuth } from "../auth/AuthContext.tsx";
 import { AmenityAssignmentDialog } from "../components/AmenityAssignmentDialog.tsx";
 import { MutationConfirmDialog } from "../components/MutationConfirmDialog.tsx";
+import { AddIcon, BlockIcon, CheckIcon, RemoveIcon } from "../components/icons.tsx";
 
 /**
  * Amenities, and the question that actually matters about them: when four
