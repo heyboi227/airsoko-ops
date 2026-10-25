@@ -7,6 +7,7 @@ import {
   formatLocalDate,
   formatLocalTime,
   localDateRange,
+  minutesBetween,
   roundToTimetableGrid,
   suggestedBlockMinutes,
   toInstant,
@@ -73,14 +74,28 @@ const GROUND_BUFFER_MINUTES = 20;
 const DELAY_RECOVERY_FACTOR = 0.6;
 
 /**
+ * The most of its block a late flight can make up in the air. A seeded block is
+ * the cruise plus the ground allowance and nothing else (`suggestedBlockMinutes`),
+ * so there is no published padding to fly into: what can be won back is a faster
+ * cruise and a quicker taxi, a tenth of the block at most. Without this bound an
+ * 88-minute delay on the 95-minute BEG-MXP recovered 35 minutes, which is a
+ * 60-minute flight.
+ */
+const MAX_RECOVERY_SHARE_OF_BLOCK = 0.1;
+
+/**
  * The most a rotation delay may push a departure before the flight is left for
  * a controller to resolve instead.
  */
 const MAX_ROTATION_KNOCK_ON_MINUTES = 60;
 
-/** How late a flight arrives, given how late it left. */
-function arrivalDelayFor(departureDelayMinutes: number): number {
-  return Math.round(departureDelayMinutes * DELAY_RECOVERY_FACTOR);
+/** How late a flight arrives, given how late it left and how long its block is. */
+function arrivalDelayFor(departureDelayMinutes: number, blockMinutes: number): number {
+  const recovered = Math.min(
+    departureDelayMinutes * (1 - DELAY_RECOVERY_FACTOR),
+    blockMinutes * MAX_RECOVERY_SHARE_OF_BLOCK,
+  );
+  return Math.round(departureDelayMinutes - recovered);
 }
 
 // --- Deterministic pseudo-randomness ---------------------------------------
@@ -472,7 +487,9 @@ export function buildFlights(
       const estimatedDeparture =
         delayMinutes > 0 ? addMinutes(departure.instant, delayMinutes) : null;
       const estimatedArrival =
-        delayMinutes > 0 ? addMinutes(arrival, arrivalDelayFor(delayMinutes)) : null;
+        delayMinutes > 0
+          ? addMinutes(arrival, arrivalDelayFor(delayMinutes, schedule.blockMinutes))
+          : null;
       const effectiveDeparture = estimatedDeparture ?? departure.instant;
       const effectiveArrival = estimatedArrival ?? arrival;
 
@@ -661,15 +678,25 @@ export function assignRotations(
       // What actually happens is the delay propagates: the aircraft flies the
       // sector late. That is what a rotation delay *is*, and it is why the
       // reason code exists.
+      //
+      // A knock-on no longer than the flight's own delay changes nothing: the
+      // flight still leaves when its own delay lets it, for its own reason.
+      // Keeping the longer delay but the knock-on's earlier departure is how a
+      // sector came to leave 35 minutes late and land 95 minutes late.
       const knockOn = Math.round((readyAt - departureMs) / 60_000);
-      flight.delayMinutes = Math.max(flight.delayMinutes, knockOn);
-      flight.delayReason = "rotation";
-      flight.estimatedDeparture = toInstant(readyAt);
-      flight.estimatedArrival = addMinutes(
-        flight.scheduledArrival,
-        arrivalDelayFor(flight.delayMinutes),
-      );
-      rotationDelays += 1;
+      if (knockOn > flight.delayMinutes) {
+        flight.delayMinutes = knockOn;
+        flight.delayReason = "rotation";
+        flight.estimatedDeparture = toInstant(readyAt);
+        flight.estimatedArrival = addMinutes(
+          flight.scheduledArrival,
+          arrivalDelayFor(
+            flight.delayMinutes,
+            minutesBetween(flight.scheduledDeparture, flight.scheduledArrival),
+          ),
+        );
+        rotationDelays += 1;
+      }
     }
 
     const effectiveDeparture = flight.estimatedDeparture ?? flight.scheduledDeparture;
