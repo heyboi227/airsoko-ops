@@ -8,7 +8,7 @@ import {
 } from "@airsoko/domain";
 import { SEED_AIRCRAFT_TYPES } from "./reference/fleet.ts";
 import { resolveStations } from "./reference/index.ts";
-import { buildFlights, buildRoutes, buildSchedules } from "./generate.ts";
+import { assignRotations, buildFlights, buildRoutes, buildSchedules } from "./generate.ts";
 
 /**
  * A fixed operating day, so these assertions are about the generator and not
@@ -106,5 +106,51 @@ describe("the seeded timetable", () => {
       }
     }
     expect(tooTight).toEqual([]);
+  });
+
+  /**
+   * Every sector with expected times, over five reference dates across the year,
+   * each run the way the seed runs it: the day's timetable, flown, and rostered
+   * with the knock-on delays that brings.
+   */
+  function expectedSectors() {
+    const sectors: {
+      label: string;
+      block: number;
+      airborne: number;
+      departureDelay: number;
+      arrivalDelay: number;
+    }[] = [];
+    for (const date of ["2026-09-08", "2026-10-01", "2026-10-18", "2026-10-25", "2026-12-24"]) {
+      const now = `${date}T12:00:00.000Z`;
+      const flights = buildFlights(buildSchedules(routes, stations, date), stations, date, now);
+      assignRotations(flights, now, new Set());
+      for (const flight of flights) {
+        if (!flight.estimatedDeparture || !flight.estimatedArrival) continue;
+        sectors.push({
+          label: `${flight.flightNumber} ${flight.serviceDate}`,
+          block: minutesBetween(flight.scheduledDeparture, flight.scheduledArrival),
+          airborne: minutesBetween(flight.estimatedDeparture, flight.estimatedArrival),
+          departureDelay: minutesBetween(flight.scheduledDeparture, flight.estimatedDeparture),
+          arrivalDelay: minutesBetween(flight.scheduledArrival, flight.estimatedArrival),
+        });
+      }
+    }
+    return sectors;
+  }
+
+  it("never flies a late sector faster than its block allows", () => {
+    // A seeded block is the cruise plus the ground allowance with no padding, so
+    // a late flight can win back a tenth of its block at most. Before that bound
+    // the seed had a 65-minute block flown in 31.
+    const sectors = expectedSectors();
+    expect(sectors.length).toBeGreaterThan(0);
+    const tooFast = sectors
+      .filter((sector) => sector.airborne < sector.block * 0.9 - 1)
+      .map(
+        (sector) =>
+          `${sector.label}: block ${sector.block}, left ${sector.departureDelay} late, flown in ${sector.airborne}`,
+      );
+    expect(tooFast).toEqual([]);
   });
 });
