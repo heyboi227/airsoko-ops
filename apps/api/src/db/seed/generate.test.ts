@@ -153,4 +153,16 @@ describe("the seeded timetable", () => {
       );
     expect(tooFast).toEqual([]);
   });
+
+  it("never lands a sector further behind than it left", () => {
+    // A flight has one delay, and its departure and arrival both follow from
+    // it, so recovery can only shrink it on the way.
+    const latening = expectedSectors()
+      .filter((sector) => sector.arrivalDelay > sector.departureDelay)
+      .map(
+        (sector) =>
+          `${sector.label}: left ${sector.departureDelay} late, landed ${sector.arrivalDelay} late`,
+      );
+    expect(latening).toEqual([]);
+  });
 });

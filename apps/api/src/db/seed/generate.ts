@@ -678,18 +678,25 @@ export function assignRotations(
       // What actually happens is the delay propagates: the aircraft flies the
       // sector late. That is what a rotation delay *is*, and it is why the
       // reason code exists.
+      //
+      // A knock-on no longer than the flight's own delay changes nothing: the
+      // flight still leaves when its own delay lets it, for its own reason.
+      // Keeping the longer delay but the knock-on's earlier departure is how a
+      // sector came to leave 35 minutes late and land 95 minutes late.
       const knockOn = Math.round((readyAt - departureMs) / 60_000);
-      flight.delayMinutes = Math.max(flight.delayMinutes, knockOn);
-      flight.delayReason = "rotation";
-      flight.estimatedDeparture = toInstant(readyAt);
-      flight.estimatedArrival = addMinutes(
-        flight.scheduledArrival,
-        arrivalDelayFor(
-          flight.delayMinutes,
-          minutesBetween(flight.scheduledDeparture, flight.scheduledArrival),
-        ),
-      );
-      rotationDelays += 1;
+      if (knockOn > flight.delayMinutes) {
+        flight.delayMinutes = knockOn;
+        flight.delayReason = "rotation";
+        flight.estimatedDeparture = toInstant(readyAt);
+        flight.estimatedArrival = addMinutes(
+          flight.scheduledArrival,
+          arrivalDelayFor(
+            flight.delayMinutes,
+            minutesBetween(flight.scheduledDeparture, flight.scheduledArrival),
+          ),
+        );
+        rotationDelays += 1;
+      }
     }
 
     const effectiveDeparture = flight.estimatedDeparture ?? flight.scheduledDeparture;
