@@ -111,6 +111,29 @@ async function futureDate(request: APIRequestContext, token: string): Promise<st
   return base.toISOString().slice(0, 10);
 }
 
+/**
+ * Airframes past a maintenance limit, by id. `MAINTENANCE_LIMIT_EXCEEDED` blocks outright,
+ * so a test that takes a flight's aircraft away and puts it back must not choose a flight
+ * one of these flies: the restore would 422 and leave the flight with no aircraft for every
+ * test after it. The seed keeps over-limit airframes off its rotations, but an airframe can
+ * pass its limit after the seed has run -- a local database a few days old is enough.
+ */
+async function overLimitAirframes(
+  request: APIRequestContext,
+  token: string,
+): Promise<ReadonlySet<string>> {
+  const response = await request.get("/api/aircraft", { headers: auth(token) });
+  expect(response.status()).toBe(200);
+  const fleet = (await response.json()) as {
+    items: { id: string; maintenance: { urgency: string } }[];
+  };
+  return new Set(
+    fleet.items
+      .filter((item) => item.maintenance.urgency === "exceeded")
+      .map((item) => item.id),
+  );
+}
+
 test.describe("the flight list", () => {
   test("defaults to the current operating day and derives what it shows", async ({
     request,
@@ -326,6 +349,7 @@ test.describe("Scenario A: aircraft reassignment", () => {
     const token = await signIn(request, ACCOUNTS.opsController);
     const date = await futureDate(request, token);
     const day = await flights(request, token, { from: date, to: date });
+    const overLimit = await overLimitAirframes(request, token);
 
     // A sector the timetable pairs -- out on one leg, home on the other --
     // with an airframe the rules would take for both. Which flight that is
@@ -339,13 +363,18 @@ test.describe("Scenario A: aircraft reassignment", () => {
     let target: FlightRow | null = null;
     let picker: CandidatesBody | null = null;
     let chosen: CandidateItem | null = null;
-    for (const item of day.items.filter((row) => row.status === "scheduled" && row.aircraft)) {
+    for (const item of day.items.filter(
+      (row) => row.status === "scheduled" && row.aircraft && !overLimit.has(row.aircraft.id),
+    )) {
       const response = await request.get(`/api/flights/${item.id}/aircraft/candidates`, {
         headers: auth(token),
       });
       expect(response.status()).toBe(200);
       const body = (await response.json()) as CandidatesBody;
       if (!body.returnLeg) continue;
+      // Both legs go back to the airframes they came off, so neither may be
+      // one the restore would be refused.
+      if (body.returnLeg.aircraft && overLimit.has(body.returnLeg.aircraft.id)) continue;
 
       // A two-leg verdict that is applicable, which is also what makes the
       // tail a substitute rather than the one already flying the return leg:
@@ -494,9 +523,11 @@ test.describe("Scenario A: aircraft reassignment", () => {
   }) => {
     const token = await signIn(request, ACCOUNTS.opsController);
     const date = await futureDate(request, token);
+    const overLimit = await overLimitAirframes(request, token);
 
     const target = (await flights(request, token, { from: date, to: date })).items.find(
-      (item) => item.status === "scheduled" && item.aircraft,
+      (item) =>
+        item.status === "scheduled" && item.aircraft && !overLimit.has(item.aircraft.id),
     );
     if (!target) throw new Error("No scheduled flight with an aircraft on the chosen date.");
     const original = target.aircraft;
