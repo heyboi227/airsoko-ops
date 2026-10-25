@@ -106,7 +106,20 @@ test.describe("Fleet", () => {
     await page.getByRole("option", { name: "On ground" }).click();
     await settled(page);
 
-    const row = page.getByRole("row").filter({ hasText: /SO\d+/ }).first();
+    // `settled` can return against the unfiltered list, and there the first
+    // row with a flight number may be an airframe in the air, whose number is
+    // the sector it is flying rather than one it would strand. So the property
+    // the filter promises is asserted first, as in the airborne test above:
+    // every airframe listed reads "On ground". The unfiltered list always
+    // holds unavailable airframes, so stale rows cannot satisfy it, and the
+    // assertion retries until the list on screen is the filtered one.
+    const airframes = page
+      .getByRole("row")
+      .filter({ hasNot: page.getByRole("columnheader") })
+      .filter({ hasNotText: "No airframes match these filters" });
+    await expect(airframes.filter({ hasNotText: "On ground" })).toHaveCount(0);
+
+    const row = airframes.filter({ hasText: /SO\d+/ }).first();
     await expect(row).toBeVisible();
     await row.click();
 
