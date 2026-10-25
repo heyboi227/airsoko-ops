@@ -7,7 +7,6 @@ import { AppShell } from "./shell/AppShell.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { AirportsPage } from "./pages/AirportsPage.tsx";
 import { AmenitiesPage } from "./pages/AmenitiesPage.tsx";
-import { DashboardPage } from "./pages/DashboardPage.tsx";
 import { FleetPage } from "./pages/FleetPage.tsx";
 import { FlightsPage } from "./pages/FlightsPage.tsx";
 import { FlightDetailPage } from "./pages/FlightDetailPage.tsx";
@@ -16,9 +15,17 @@ import { PhasePlaceholder } from "./pages/PhasePlaceholder.tsx";
 import { NAV_ITEMS } from "./shell/navigation.ts";
 
 const THEME_KEY = "airsoko.colourScheme";
+// Pages that bring a heavy library of their own load on demand: the live map
+// (MapLibre) and the dashboard (MUI X charts). Every other page shares MUI and
+// the app's own components, so it stays in the main chunks (decision 38).
 const LiveOperationsPage = lazy(() =>
   import("./pages/LiveOperationsPage.tsx").then((module) => ({
     default: module.LiveOperationsPage,
+  })),
+);
+const DashboardPage = lazy(() =>
+  import("./pages/DashboardPage.tsx").then((module) => ({
+    default: module.DashboardPage,
   })),
 );
 
@@ -64,7 +71,16 @@ export function App() {
         <Routes>
           <Route element={<AppShell mode={mode} onToggleMode={toggleMode} />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route
+              path="/dashboard"
+              element={
+                <Suspense
+                  fallback={<CircularProgress aria-label="Loading dashboard" sx={{ m: 3 }} />}
+                >
+                  <DashboardPage />
+                </Suspense>
+              }
+            />
             <Route path="/network" element={<AirportsPage />} />
             <Route path="/fleet" element={<FleetPage />} />
             <Route

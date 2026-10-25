@@ -954,3 +954,31 @@ License 2.0.
 `@mui/icons-material` -- unpkg serves it without installing anything -- and give it its own
 `createSvgIcon` call under the same name. Installing the package again for a seventeenth icon
 would bring all 43,010 files back.
+
+---
+
+## 38. The web bundle is split by weight, and MapLibre is the one exception
+
+**Decided.** Pages that bring a heavy library of their own load on demand: the live map
+(MapLibre) and the dashboard (MUI X charts). The vendor code every page needs ships in chunks
+of its own -- React, MUI's styling layer and MUI's components -- and every chunk the build
+writes is held to 500 kB, except MapLibre's.
+
+The web app used to build one 1,775 kB `index` chunk beside the lazily loaded live page, and
+Vite warned about both on every build, so the warning had stopped meaning anything. Now React
+(431 kB), MUI's components (413 kB) and its styling layer (147 kB) sit beside a 444 kB
+`index`, and the dashboard's charts (338 kB) arrive when the dashboard opens. The sign-in page
+and every other page load 1,437 kB instead of 1,775 kB, 398 kB gzipped instead of 500 kB.
+Opening the dashboard brings the total back to what it was, in pieces the browser fetches in
+parallel and caches separately.
+
+**MapLibre is the exception, and the only one.** It is a single module of about 1,070 kB that
+cannot be divided, and it is fetched only when `/live` opens. Vite's chunk-size advisory takes
+one limit for the whole build, so that limit is set above MapLibre, and a small plugin in
+`apps/web/vite.config.ts` warns when any other chunk passes 500 kB. A chunk over the budget is
+a question to answer -- split it, load it later or drop the dependency -- not a limit to
+raise.
+
+**The other pages stay where they are.** They share MUI and the app's own components; loading
+each on demand would put a wait in front of every first visit to save about 100 kB of page
+code.
