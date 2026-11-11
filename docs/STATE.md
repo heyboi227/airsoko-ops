@@ -49,8 +49,9 @@ speed and position, stale and unavailable cases, short sectors and the dateline.
 - The live page was visually inspected at 1,600px and 1,100px widths. The map,
   route, selected marker, list and contextual drawer render together; narrower
   screens stack the panels without horizontal clipping.
-- Vite retains its advisory about chunks larger than 500 kB. The map is loaded
-  on demand rather than included in the initial route's module.
+- At the gate Vite still gave its advisory about chunks larger than 500 kB; the
+  bundle has since been split (see **Fixed since**). The map is loaded on demand
+  rather than included in the initial route's module.
 
 The main additions are `packages/contracts/src/telemetry.ts`,
 `packages/domain/src/telemetry.ts`, `apps/api/src/telemetry/provider.ts`,
@@ -65,8 +66,8 @@ extended to connect them.
   corrected. Selecting a date filters records and does not replay historical movement.
 - Diversions cannot be simulated until a destination is confirmed. External mode
   explicitly reports unavailable positions; a real tracking adapter is not installed.
-- The map caps a window at 1,000 flights and reports when it does so. Land is
-  deliberately low resolution, with no external tiles or fonts required.
+- The map caps a window at 1,000 flights and reports when it does so. Land is a bundled
+  1:50m outline, with no external tiles or fonts required.
 - Crew assignments and passenger load/inventory remain Phase 5 and Phase 6 work.
 
 Implementation details and the polling decision are recorded in decision 35.
@@ -88,6 +89,69 @@ Implementation details and the polling decision are recorded in decision 35.
   492 nm: a blocking finding, which no acknowledgement clears, and every pull request
   that UTC day failed without a line of its own changing. The sector now comes from a
   seeded pattern, whose times are the published ones whatever the clock says.
+- **A clean install wrote 43,010 icon files to draw sixteen.** `@mui/icons-material`
+  shipped every Material icon in all five styles, 62% of `node_modules`, to supply the
+  sixteen the web app used. On a Windows machine with real-time antivirus scanning, each
+  file was scanned as `npm ci` wrote it, and a clean install took twenty minutes; on
+  Linux the whole install took eight seconds. The sixteen icons are now drawn in
+  `apps/web/src/components/icons.tsx` with MUI's `createSvgIcon`, under the package's
+  own names, so the markup and the `data-testid` values are unchanged. The package is no
+  longer a dependency, and `node_modules` went from 69,173 files to 26,164. Adding an
+  icon is a copy, not an install. Recorded in decision 37.
+- **Coastal airports sat offshore.** The bundled land was Natural Earth's 1:110m
+  outline, coarse enough at zoom 3 to 5 to leave coastal airports in the sea. It is now
+  the 1:50m dataset, with 1,420 shapes and 60,669 points against 127 and 5,143, and
+  1.6 MB against 224 KB. The file, `apps/web/public/map/land.geojson`, is kept byte for
+  byte as published so that it can be checked against its source, which is why
+  `.prettierignore` names it. The README beside it says where it came from and how to
+  check it.
+- **Unselected routes were too faint to read.** With **Show all routes** on, an
+  unselected route was `#607e92` at 1 px and 50% opacity, a contrast of 1.8:1 against
+  the land and 2.0:1 against the water. It is now `#8faab9` at 1.25 px and 70%, 3.45:1
+  and 4.14:1, past the 3:1 that WCAG 1.4.11 asks of a graphic. The selected route stays
+  at 7.9:1 and 2.5 px, and now sorts above the rest, because other flights between the
+  same two airports share its arc.
+- **Every build warned about its size, so the warning had stopped meaning anything.**
+  The web app built one 1,775 kB `index` chunk, and Vite warned on every build. The
+  dashboard now loads on demand with its charts, as the live page already did, and
+  React, MUI's styling layer and MUI's components ship as chunks of their own. Every
+  chunk is held to 500 kB except MapLibre's, a single module that cannot be divided and
+  is fetched only when `/live` opens. Vite's advisory takes one limit for the whole
+  build, so it is set above MapLibre, and a small plugin in `apps/web/vite.config.ts`
+  warns when any other chunk passes 500 kB. Decision 38 records the reasoning and the
+  sizes at the time.
+- **Two acceptance specs could fail on the data rather than the code.** The fleet
+  withdrawal test chose its airframe from a list that might not yet be the filtered one,
+  where the first row with a flight number could be an airframe in the air. It now
+  asserts that no row reads anything but "On ground" before it chooses. The two
+  Scenario A tests that take a flight's aircraft away and put it back could have the
+  restore refused with a 422 if the airframe had passed a maintenance limit after the
+  seed ran (`MAINTENANCE_LIMIT_EXCEEDED` blocks outright), leaving the flight on the
+  wrong aircraft for every test after it. Both now read the fleet once and pass over
+  flights whose aircraft is past a limit, on either leg for the return-leg test.
+- **A late flight made up time no aeroplane could.** The seed let every late flight
+  recover 40% of its delay in the air, whatever its length. Over ten days of generated
+  sectors, 864 of 8,023 were flown in under 90% of their block, one 65-minute block in
+  31 minutes. It was the same fault that, on the day the recorded-entries specs went
+  red, turned an 88-minute delay on the 95-minute BEG-MXP into a 60-minute flight.
+  Recovery is now capped: it is the smaller of 40% of the delay and a tenth of the
+  block, and a test runs five reference dates through the seed's pipeline and holds
+  every expected sector to 90% of its block. The consequence is that delays now last
+  longer, and more of the delay reaches the next sector. Over 20 to 29 October in the
+  generator, the share of flights arriving 15 or more minutes late went from 12.4% to
+  13.9% and the mean arrival delay of late flights from 22 to 29 minutes, while rotation
+  delays rose by 7% and flights left without an aircraft by 14%. The "145 of 820" quoted
+  under Phase 3's known simplifications was counted before the cap and has not been
+  recounted.
+- **A flight could leave by one delay and land by another.** `assignRotations` kept the
+  longer of a flight's own delay and the knock-on from its inbound, but always took the
+  knock-on's departure time and blamed the rotation. Where the flight's own delay was
+  the longer, the sector left by the knock-on and landed by its own: SO102 left
+  35 minutes late and landed 95 late. A knock-on now moves a flight only when it is
+  longer than the flight's own delay; otherwise the flight leaves when its own delay
+  lets it, for its own reason. A test holds every expected sector to landing no further
+  behind than it left. Rotation-attributed delays fell from 1,035 to 1,002 over 20 to
+  29 October.
 
 ---
 
