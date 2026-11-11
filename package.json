@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "concurrently": "^10.0.6",
+    "concurrently": "^10.0.7",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.0",
     "globals": "^17.14.0",
